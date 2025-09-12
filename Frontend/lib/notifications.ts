@@ -1,0 +1,14 @@
+import { get, patch } from "./api";
+import type { Notification } from "@/types/api";
+
+export const notificationsApi = {
+  async list(status?: 'unread' | 'read'): Promise<Notification[]> {
+    const q = status ? `?status=${encodeURIComponent(status)}` : '';
+    const res = await get<any>(`/api/notifications${q}`);
+    return Array.isArray(res) ? res : (res?.results ?? []);
+  },
+  async markRead(id: number): Promise<void> {
+    await patch(`/api/notifications/${id}`, { status: 'read' });
+  },
+};
+

@@ -1,0 +1,7 @@
+export type Role = "admin" | "sales" | "designer" | "production" | "delivery" | "finance";
+export function getUserRole(): Role {
+  if (typeof window === "undefined") return "sales";
+  const r = (localStorage.getItem("admin_role") || "sales").toLowerCase();
+  const known: Role[] = ["admin","sales","designer","production","delivery","finance"];
+  return known.includes(r as Role) ? (r as Role) : "sales";
+}
