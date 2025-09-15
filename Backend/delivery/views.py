@@ -2,13 +2,17 @@ import random
 from datetime import timedelta
 from django.utils import timezone
 from django.conf import settings
+import logging
 from rest_framework.views import APIView
 from rest_framework.response import Response
-from rest_framework import status
+from rest_framework.parsers import MultiPartParser
 from orders.models import Order, OrderDelivery
 from .models import DeliveryCode
 from accounts.permissions import RolePermission
 from drf_spectacular.utils import extend_schema
+
+
+logger = logging.getLogger(__name__)
 
 
 def _generate_code() -> str:
@@ -23,8 +27,7 @@ class SendCodeView(APIView):
         order_id = request.data.get('orderId')
         phone = request.data.get('phone')
         if not order_id or not phone:
-            # legacy signature {code, phone} may be sent; ignore code, require phone
-            phone = request.data.get('phone')
+            return Response({'detail': 'orderId and phone required'}, status=400)
         try:
             order = Order.objects.get(id=order_id)
         except Order.DoesNotExist:
@@ -37,15 +40,15 @@ class SendCodeView(APIView):
         od.save(update_fields=['delivery_code'])
         # SMS provider abstraction (console)
         provider = getattr(settings, 'SMS_PROVIDER', 'console')
-        if provider == 'console':
-            print(f"[SMS] to {phone}: Your delivery code is {code}")
+        if provider == 'console' and settings.DEBUG:
+            logger.info("[SMS] to %s: Your delivery code is %s", phone, code)
         return Response({'code': code, 'sent': True})
 
 
 class RiderPhotoUploadView(APIView):
     permission_classes = [RolePermission]
     allowed_roles = ['admin', 'delivery']
-    parser_classes = []  # DRF will auto-detect for multipart
+    parser_classes = [MultiPartParser]
     @extend_schema(responses={200: None})
     def post(self, request):
         order_id = request.data.get('orderId')

@@ -11,9 +11,7 @@ export function TabsList({ children, className }: any) {
 export function TabsTrigger({ value, children, onClick }: any) {
   return (
     <button
-      className="px-4 py-2 rounded-full text-sm font-medium transition-all duration-200
-        bg-gray-100 hover:bg-blue-100 text-gray-600 
-        data-[state=active]:bg-blue-600 data-[state=active]:text-white shadow-sm"
+      className={`px-4 py-2 rounded-full text-sm font-medium transition-all duration-200 bg-gray-100 hover:bg-blue-100 text-gray-600 data-[state=active]:bg-blue-600 data-[state=active]:text-white shadow-sm`}
       onClick={onClick}
       data-state="inactive"
     >

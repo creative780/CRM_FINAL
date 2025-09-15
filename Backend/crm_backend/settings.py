@@ -63,6 +63,9 @@ INSTALLED_APPS = [
     'mediahub',
     'notifications',
     'hr',
+    'attendance',
+    'audit',
+    'chat',
 ]
 
 MIDDLEWARE = [

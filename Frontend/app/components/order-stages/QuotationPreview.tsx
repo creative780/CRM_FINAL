@@ -20,9 +20,13 @@ export default function QuotationPreview({ formData }: any) {
     const checkLoaded = () => {
       if (window.html2pdf) {
         setIsPDFReady(true);
-        console.log("✅ html2pdf.js loaded");
+        if (process.env.NODE_ENV !== "production") {
+          console.log("✅ html2pdf.js loaded");
+        }
       } else {
-        console.warn("Retrying html2pdf load check...");
+        if (process.env.NODE_ENV !== "production") {
+          console.warn("Retrying html2pdf load check...");
+        }
         setTimeout(checkLoaded, 300);
       }
     };
@@ -31,7 +35,11 @@ export default function QuotationPreview({ formData }: any) {
     script.src = "https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js";
     script.async = true;
     script.onload = checkLoaded;
-    script.onerror = () => console.error("❌ Failed to load html2pdf.js");
+    script.onerror = () => {
+      if (process.env.NODE_ENV !== "production") {
+        console.error("❌ Failed to load html2pdf.js");
+      }
+    };
     document.body.appendChild(script);
 
     return () => document.body.removeChild(script);
@@ -45,7 +53,9 @@ export default function QuotationPreview({ formData }: any) {
 
     if (typeof window.html2pdf === "undefined") {
       if (attempt < 4) {
-        console.warn(`🕐 Attempt ${attempt}: Waiting for html2pdf...`);
+        if (process.env.NODE_ENV !== "production") {
+          console.warn(`🕐 Attempt ${attempt}: Waiting for html2pdf...`);
+        }
         setTimeout(() => handleDownloadPDF(attempt + 1), 300);
       } else {
         alert("⚠️ PDF tool is not ready yet. Please try again in a few seconds.");
@@ -81,7 +91,13 @@ export default function QuotationPreview({ formData }: any) {
     };
 
     if (navigator.share) {
-      navigator.share(shareData).catch((err) => console.error("Share failed:", err));
+      navigator
+        .share(shareData)
+        .catch((err) => {
+          if (process.env.NODE_ENV !== "production") {
+            console.error("Share failed:", err);
+          }
+        });
     } else {
       alert("Sharing not supported. Please copy the URL manually.");
     }
@@ -154,7 +170,9 @@ export default function QuotationPreview({ formData }: any) {
               <button
                 className="px-4 py-2 bg-[#891F1A] text-white rounded hover:bg-[#6e1714]"
                 onClick={() => {
-                  console.log("Edit requested:", editNotes);
+                  if (process.env.NODE_ENV !== "production") {
+                    console.log("Edit requested:", editNotes);
+                  }
                   alert("Edit request submitted!");
                   setShowEditModal(false);
                   setEditNotes("");

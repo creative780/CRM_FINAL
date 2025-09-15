@@ -87,7 +87,7 @@ class OrderStagePatchView(APIView):
                 obj.save()
             elif stage == 'delivery':
                 obj, _ = OrderDelivery.objects.get_or_create(order=order)
-                for f in ['delivery_code', 'delivered_at', 'rider_photo_path']:
+                for f in ['delivery_code', 'delivery_status', 'delivered_at', 'rider_photo_path']:
                     if f in payload:
                         setattr(obj, f, payload[f])
                 obj.save()
@@ -289,6 +289,7 @@ class OrderDeliveryView(APIView):
             delivery, created = OrderDelivery.objects.get_or_create(order=order)
             return Response({
                 'delivery_code': delivery.delivery_code,
+                'delivery_status': delivery.delivery_status,
                 'delivered_at': delivery.delivered_at,
                 'rider_photo_path': delivery.rider_photo_path,
             })
@@ -300,7 +301,7 @@ class OrderDeliveryView(APIView):
         try:
             order = Order.objects.get(id=order_id)
             delivery, created = OrderDelivery.objects.get_or_create(order=order)
-            for field in ['delivery_code', 'delivered_at', 'rider_photo_path']:
+            for field in ['delivery_code', 'delivery_status', 'delivered_at', 'rider_photo_path']:
                 if field in request.data:
                     setattr(delivery, field, request.data[field])
             delivery.save()

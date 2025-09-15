@@ -59,6 +59,7 @@ const STAGE_REGISTRY: Record<
       riderPhoto: File | null;
       setRiderPhoto: React.Dispatch<React.SetStateAction<File | null>>;
       handleUpload: () => Promise<void>;
+      canGenerate: boolean;
     }) => JSX.Element;
   }
 > = {
@@ -91,8 +92,8 @@ const STAGE_REGISTRY: Record<
   },
   deliveryProcess: {
     label: "Delivery Process",
-    requiredFields: ["generate code"], // placeholder
-    render: ({ formData, setFormData, deliveryCode, generateCode, riderPhoto, setRiderPhoto, handleUpload }) => (
+    requiredFields: ["phone", "deliveryCode", "deliveryStatus"],
+    render: ({ formData, setFormData, deliveryCode, generateCode, riderPhoto, setRiderPhoto, handleUpload, canGenerate }) => (
       <DeliveryProcessForm
         formData={formData}
         setFormData={setFormData}
@@ -101,6 +102,7 @@ const STAGE_REGISTRY: Record<
         riderPhoto={riderPhoto}
         setRiderPhoto={setRiderPhoto}
         handleUpload={handleUpload}
+        canGenerate={canGenerate}
       />
     ),
   },
@@ -140,7 +142,6 @@ export default function OrderLifecyclePage() {
     productType: "",
     specifications: "",
     urgency: "",
-    orderId: "AUTO123",
     status: "New",
     rawMaterialCost: 0,
     labourCost: 0,
@@ -151,43 +152,104 @@ export default function OrderLifecyclePage() {
     designCost: 0,
     packagingCost: 0,
     requirementsFiles: [],
+    sku: "",
+    qty: 0,
+    phone: "",
+    deliveryCode: "",
+    deliveryStatus: "Dispatched",
   });
 
-  const generateCode = async () => {
-    const code = Math.floor(100000 + Math.random() * 900000).toString();
-    setDeliveryCode(code);
-    const apiBase = process.env.NEXT_PUBLIC_API_BASE || "http://localhost:8000";
-    const token = typeof window !== "undefined" ? localStorage.getItem("admin_token") : null;
-    await fetch(`${apiBase}/api/send-delivery-code`, {
-      method: "POST",
-      body: JSON.stringify({ code, phone: "+971XXXXXXXXX" }),
-      headers: {
-        "Content-Type": "application/json",
-        ...(token ? { Authorization: `Bearer ${token}` } : {}),
-      },
-    });
+  const generateCode = async (): Promise<void> => {
+    if (!formData._orderId) {
+      toast.error("Please save the order first");
+      return;
+    }
+    if (!formData.phone) {
+      toast.error("Phone number required");
+      return;
+    }
+    try {
+      const apiBase = process.env.NEXT_PUBLIC_API_BASE || "http://localhost:8000";
+      const token = typeof window !== "undefined" ? localStorage.getItem("admin_token") : null;
+      const resp = await fetch(`${apiBase}/api/delivery/send-code`, {
+        method: "POST",
+        body: JSON.stringify({ orderId: formData._orderId, phone: formData.phone }),
+        headers: {
+          "Content-Type": "application/json",
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+      });
+      if (!resp.ok) throw new Error(`Send code failed (${resp.status})`);
+      const data = await resp.json();
+      setDeliveryCode(data.code);
+      setFormData((p: any) => ({ ...p, deliveryCode: data.code }));
+    } catch (e) {
+      toast.error("Failed to generate code");
+      if (process.env.NODE_ENV !== "production") {
+        console.error(e);
+      }
+    }
   };
 
   const handleUpload = async () => {
-    if (!riderPhoto) return;
-    const form = new FormData();
-    form.append("photo", riderPhoto);
-    const apiBase = process.env.NEXT_PUBLIC_API_BASE || "http://localhost:8000";
-    const token = typeof window !== "undefined" ? localStorage.getItem("admin_token") : null;
-    await fetch(`${apiBase}/api/upload-rider-photo`, { method: "POST", body: form, headers: { ...(token ? { Authorization: `Bearer ${token}` } : {}) } });
+    if (!formData._orderId) {
+      toast.error("Please save the order first");
+      return;
+    }
+    if (!riderPhoto) {
+      toast.error("No photo selected");
+      return;
+    }
+    try {
+      const apiBase = process.env.NEXT_PUBLIC_API_BASE || "http://localhost:8000";
+      const token = typeof window !== "undefined" ? localStorage.getItem("admin_token") : null;
+      const form = new FormData();
+      form.append("photo", riderPhoto);
+      form.append("orderId", formData._orderId);
+      const resp = await fetch(`${apiBase}/api/delivery/rider-photo`, {
+        method: "POST",
+        body: form,
+        headers: {
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+      });
+      if (!resp.ok) throw new Error(`Upload failed (${resp.status})`);
+      const data = await resp.json();
+      setFormData((p: any) => ({ ...p, riderPhotoPath: data.url }));
+    } catch (e) {
+      toast.error("Photo upload failed");
+      if (process.env.NODE_ENV !== "production") {
+        console.error(e);
+      }
+    }
   };
 
   const handleMarkPrinted = async () => {
-    const apiBase = process.env.NEXT_PUBLIC_API_BASE || "http://localhost:8000";
-    const token = typeof window !== "undefined" ? localStorage.getItem("admin_token") : null;
-    await fetch(`${apiBase}/api/decrement-inventory`, {
-      method: "POST",
-      body: JSON.stringify({ jobId: "12345" }),
-      headers: {
-        "Content-Type": "application/json",
-        ...(token ? { Authorization: `Bearer ${token}` } : {}),
-      },
-    });
+    if (!formData._orderId) {
+      toast.error("Please save the order first");
+      return;
+    }
+    try {
+      const apiBase = process.env.NEXT_PUBLIC_API_BASE || "http://localhost:8000";
+      const token = typeof window !== "undefined" ? localStorage.getItem("admin_token") : null;
+      const resp = await fetch(
+        `${apiBase}/api/orders/${formData._orderId}/actions/mark-printed`,
+        {
+          method: "POST",
+          body: JSON.stringify({ sku: formData.sku, qty: formData.qty }),
+          headers: {
+            "Content-Type": "application/json",
+            ...(token ? { Authorization: `Bearer ${token}` } : {}),
+          },
+        }
+      );
+      if (!resp.ok) throw new Error(`Mark printed failed (${resp.status})`);
+    } catch (e) {
+      toast.error("Failed to mark printed");
+      if (process.env.NODE_ENV !== "production") {
+        console.error(e);
+      }
+    }
   };
 
   const handleSaveOrder = async () => {
@@ -219,7 +281,7 @@ export default function OrderLifecyclePage() {
         if (stageKey === "designProduction") { stage = "design"; payload = { assigned_designer: formData.assignedDesigner, requirements_files: formData.requirementsFiles, design_status: formData.designStatus }; }
         if (stageKey === "printingQA") { stage = "printing"; payload = { print_operator: formData.printOperator, print_time: formData.printTime, batch_info: formData.batchInfo, print_status: formData.printStatus, qa_checklist: formData.qaChecklist }; }
         if (stageKey === "clientApproval") { stage = "approval"; payload = { client_approval_files: formData.clientApprovalFiles, approved_at: formData.approvedAt }; }
-        if (stageKey === "deliveryProcess") { stage = "delivery"; payload = { delivery_code: formData.deliveryCode, delivered_at: formData.deliveredAt, rider_photo_path: formData.riderPhotoPath }; }
+        if (stageKey === "deliveryProcess") { stage = "delivery"; payload = { delivery_code: formData.deliveryCode, delivery_status: formData.deliveryStatus, delivered_at: formData.deliveredAt, rider_photo_path: formData.riderPhotoPath }; }
         if (stage) {
           const resp = await fetch(`${apiBase}/api/orders/${formData._orderId}`, { method: "PATCH", headers, body: JSON.stringify({ stage, payload }) });
           if (!resp.ok) throw new Error(`Update failed (${resp.status})`);
@@ -364,6 +426,7 @@ export default function OrderLifecyclePage() {
                   riderPhoto,
                   setRiderPhoto,
                   handleUpload,
+                  canGenerate: !!formData._orderId,
                 })}
 
                 {/* Navigation Buttons */}

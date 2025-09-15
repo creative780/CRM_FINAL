@@ -64,5 +64,6 @@ class OrderDelivery(models.Model):
     delivery_code = models.CharField(max_length=6, blank=True)
     delivered_at = models.DateTimeField(null=True, blank=True)
     rider_photo_path = models.CharField(max_length=500, blank=True)
+    delivery_status = models.CharField(max_length=20, default="Dispatched")
 
 # Create your models here.

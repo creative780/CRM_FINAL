@@ -47,6 +47,7 @@ export interface OrderApproval {
 export interface OrderDelivery {
   order: number;
   delivery_code: string;
+  delivery_status: string;
   delivered_at: string | null;
   rider_photo_path: string;
 }
@@ -108,6 +109,6 @@ export const ordersApi = {
     api.patch(`/api/orders/${orderId}/delivery/`, data),
 
   // Actions
-  markPrinted: (orderId: number, sku: string, qty: number): Promise<void> => 
-    api.post(`/api/orders/${orderId}/actions/mark-printed/`, { sku, qty }),
+  markPrinted: (orderId: number, sku: string, qty: number): Promise<void> =>
+    api.post(`/api/orders/${orderId}/actions/mark-printed`, { sku, qty }),
 };

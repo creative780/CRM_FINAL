@@ -120,7 +120,9 @@ export default function ClientApprovalForm({ formData, setFormData }: any) {
             variant="default"
             className="w-full bg-green-600 hover:bg-green-700 text-white font-semibold shadow"
             onClick={() => {
-              console.log("Saved formData:", formData);
+              if (process.env.NODE_ENV !== "production") {
+                console.log("Saved formData:", formData);
+              }
               toast.success("Client Review & Approval section saved!");
             }}
           >

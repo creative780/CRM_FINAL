@@ -20,7 +20,7 @@ REQUIRED_FIELDS = {
     'design': ['assigned_designer'],
     'printing': ['print_operator'],
     'approval': [],
-    'delivery': [],
+    'delivery': ['delivery_code', 'delivery_status'],
 }
 
 

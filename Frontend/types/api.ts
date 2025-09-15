@@ -51,7 +51,7 @@ export interface OrderQuotationPayload { labour_cost?: number; finishing_cost?: 
 export interface OrderDesignPayload { assigned_designer?: string; requirements_files?: string[]; design_status?: string; }
 export interface OrderPrintPayload { print_operator?: string; print_time?: string; batch_info?: string; print_status?: string; qa_checklist?: string[]; }
 export interface OrderApprovalPayload { client_approval_files?: string[]; approved_at?: string; }
-export interface OrderDeliveryPayload { delivery_code?: string; delivered_at?: string; rider_photo_path?: string; }
+export interface OrderDeliveryPayload { delivery_code?: string; delivered_at?: string; rider_photo_path?: string; delivery_status?: string; }
 
 export type OrderStagePayloads =
   | { stage: 'quotation'; payload: OrderQuotationPayload }

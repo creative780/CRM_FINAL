@@ -350,7 +350,9 @@ export default function EmployeeMonitoringWithLogin() {
             const idx = String(i + 1).padStart(3, "0");
             sFolder.file(`screenshot_${idx}.jpg`, blob);
           } catch (e) {
-            console.warn("Failed to fetch screenshot:", url, e);
+            if (process.env.NODE_ENV !== "production") {
+              console.warn("Failed to fetch screenshot:", url, e);
+            }
           }
         }
       }
@@ -371,7 +373,9 @@ export default function EmployeeMonitoringWithLogin() {
               blob.type.includes("avi") ? "avi" : "bin";
             vFolder!.file(`segment_${idx}.${ext}`, blob);
           } catch (e) {
-            console.warn("Video fetch failed:", vurl, e);
+            if (process.env.NODE_ENV !== "production") {
+              console.warn("Video fetch failed:", vurl, e);
+            }
           }
         }
       }
@@ -384,7 +388,9 @@ export default function EmployeeMonitoringWithLogin() {
       document.body.appendChild(a); a.click(); a.remove();
       setTimeout(() => URL.revokeObjectURL(a.href), 1500);
     } catch (e) {
-      console.error(e);
+      if (process.env.NODE_ENV !== "production") {
+        console.error(e);
+      }
       alert("Failed to prepare archive. Make sure 'jszip' is installed.");
     } finally {
       setDownloading(false);
