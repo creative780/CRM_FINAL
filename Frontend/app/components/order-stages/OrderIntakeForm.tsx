@@ -2,12 +2,29 @@
 
 import React, { useCallback, useRef, useState, useEffect } from "react";
 
-/** ===== Types ===== */
+/**
+ * Order intake form component used to collect the details necessary to create
+ * or update a custom order. This component handles its own internal state
+ * when uncontrolled and exposes a few named helpers for consumers.  The
+ * default export is the component itself so it can be imported without
+ * braces, while the named exports provide utilities for consumers to
+ * construct initial form values.
+ */
+
+/* ===== Types ===== */
 type Urgency = "Urgent" | "High" | "Normal" | "Low";
 type Status = "New" | "Active" | "Completed";
-export type Row = { id: string; title: string; date: string; time: string; urgency: Urgency; status: Status };
 
-type IntakeProduct = { name: string; quantity: number };
+export type Row = {
+  id: string;
+  title: string;
+  date: string;
+  time: string;
+  urgency: Urgency;
+  status: Status;
+};
+
+export type IntakeProduct = { name: string; quantity: number };
 type UploadMeta = { name: string; size: number; type: string; url: string };
 
 export interface OrderIntakeFormValues {
@@ -17,6 +34,7 @@ export interface OrderIntakeFormValues {
   email: string;
   address: string;
   specifications: string;
+  productType: string;
   urgency: Urgency;
   status: Status;
   orderId: string;
@@ -25,29 +43,32 @@ export interface OrderIntakeFormValues {
   showProductDropdown: boolean;
   previewDate: string;
   previewTime: string;
+  // Allow additional keys for uncontrolled updates
   [key: string]: any;
 }
 
 type Props = {
-  onSaved?: (row: Row) => void; // parent ko row bhejna
+  /** Optional callback fired when the user clicks Save.  The row passed
+   * back is the row representation used by the table page. */
+  onSaved?: (row: Row) => void;
+  /** When provided, the form behaves as a controlled component. */
   formData?: OrderIntakeFormValues;
+  /** Required when using controlled form data. */
   setFormData?: React.Dispatch<React.SetStateAction<any>>;
+  /** Require that products/files are selected before allowing save. */
   requireProductsAndFiles?: boolean;
 };
 
-/** ===== Helpers ===== */
+/* ===== Helpers ===== */
 const toLocalYMD = (d: Date) =>
   `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 const toLocalHM = (d: Date) =>
   `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
 
-/** ===== Mini UI prmitives ===== */
-const Card: React.FC<React.HTMLAttributes<HTMLDivElement>> = ({ className = "", ...props }) => (
-  <div className={`rounded-xl border bg-white shadow-sm ${className}`} {...props} />
-);
+/* ===== Mini UI primitives ===== */
 const Separator = () => <div className="h-px w-full bg-gray-200" />;
 
-/** ===== Grouped Product list (sample) ===== */
+/* ===== Grouped Product list (sample) ===== */
 const GROUPED_PRODUCTS: Record<string, string[]> = {
   A: ["Acrylic Keychain", "Air Freshener"],
   B: ["Brochure", "Business Card"],
@@ -77,6 +98,11 @@ const GROUPED_PRODUCTS: Record<string, string[]> = {
   Z: ["Zipper Pouch", "Z-Fold Brochure"],
 };
 
+/**
+ * Creates the default values for a new order intake.  Useful when
+ * resetting the form after saving or when initializing controlled form
+ * state.
+ */
 export const createOrderIntakeDefaults = (): OrderIntakeFormValues => {
   const now = new Date();
   return {
@@ -86,6 +112,7 @@ export const createOrderIntakeDefaults = (): OrderIntakeFormValues => {
     email: "",
     address: "",
     specifications: "",
+    productType: "",
     urgency: "Normal",
     status: "New",
     orderId: `ORD-${Math.random().toString(36).slice(2, 8).toUpperCase()}`,
@@ -104,11 +131,10 @@ const OrderIntakeForm: React.FC<Props> = ({
   requireProductsAndFiles = false,
 }) => {
   const productDropdownRef = useRef<HTMLDivElement>(null);
-
-  // preview ke liye initial time; ACTUAL date/time save ke waqt capture hoga
+  // Determine if the form is controlled
   const isControlled = controlledFormData !== undefined && controlledSetFormData !== undefined;
   const [internalFormData, setInternalFormData] = useState<OrderIntakeFormValues>(() =>
-    controlledFormData ? { ...createOrderIntakeDefaults(), ...controlledFormData } : createOrderIntakeDefaults()
+    controlledFormData ? { ...createOrderIntakeDefaults(), ...controlledFormData } : createOrderIntakeDefaults(),
   );
   const formData = (isControlled ? controlledFormData : internalFormData) || createOrderIntakeDefaults();
   const setFormData = useCallback(
@@ -122,7 +148,7 @@ const OrderIntakeForm: React.FC<Props> = ({
         });
       }
     },
-    [isControlled, controlledSetFormData]
+    [isControlled, controlledSetFormData],
   );
 
   const [searchText, setSearchText] = useState("");
@@ -163,7 +189,9 @@ const OrderIntakeForm: React.FC<Props> = ({
       if (removed?.url?.startsWith("blob:")) {
         try {
           URL.revokeObjectURL(removed.url);
-        } catch {}
+        } catch {
+          /* ignore */
+        }
       }
       return prev.filter((_, i) => i !== index);
     });
@@ -191,19 +219,19 @@ const OrderIntakeForm: React.FC<Props> = ({
   const flatProductList = Object.values(GROUPED_PRODUCTS).flat();
   const exactMatch = flatProductList.some((p) => p.toLowerCase() === searchText.toLowerCase());
   const filteredProducts = Object.entries(GROUPED_PRODUCTS).flatMap(([_, products]) =>
-    products.filter((product) => product.toLowerCase().includes(searchText.toLowerCase()))
+    products.filter((product) => product.toLowerCase().includes(searchText.toLowerCase())),
   );
 
   /** ===== Validation ===== */
+  const trimmedProductType = typeof formData.productType === "string" ? formData.productType.trim() : "";
   const hasAtLeastOneProduct = Array.isArray(formData.products) && formData.products.length > 0;
-  const hasAtLeastOneFile = intakeFiles.length > 0; // agar files mandatory chahiye to is check ko use karo
+  const hasAtLeastOneFile = intakeFiles.length > 0;
+  const hasProductDetails = trimmedProductType.length > 0 || hasAtLeastOneProduct;
 
   /** ===== Save ===== */
   const handleSave = () => {
-    // **If you want files mandatory, uncomment below**
-    // if (!hasAtLeastOneFile) { alert("Please upload at least one file before saving."); return; }
-    if (!hasAtLeastOneProduct) {
-      alert("Please add at least one product before saving.");
+    if (!hasProductDetails) {
+      alert("Please enter a product type or add at least one product before saving.");
       return;
     }
     if (requireProductsAndFiles && !hasAtLeastOneFile) {
@@ -215,9 +243,12 @@ const OrderIntakeForm: React.FC<Props> = ({
     const date = toLocalYMD(now);
     const time = toLocalHM(now);
 
+    const productType = trimmedProductType;
     const prods = (formData.products || []) as IntakeProduct[];
     const titleFromProducts =
-      prods.length > 0
+      productType && productType.length > 0
+        ? productType
+        : prods.length > 0
         ? prods.map((p) => (p.quantity ? `${p.quantity} × ${p.name}` : p.name)).join(", ")
         : "Custom Order";
 
@@ -227,10 +258,10 @@ const OrderIntakeForm: React.FC<Props> = ({
       date,
       time,
       urgency: formData.urgency as Urgency,
-      status: formData.status as Status, // ✅ user-selected section
+      status: formData.status as Status,
     };
 
-    onSaved(row); // parent page ko bhej do
+    onSaved(row);
 
     // reset for next time
     setFormData(createOrderIntakeDefaults());
@@ -240,7 +271,7 @@ const OrderIntakeForm: React.FC<Props> = ({
   };
 
   return (
-    <Card className="text-black bg-white rounded-xl p-6 md:p-8 space-y-6 w-full shadow shadow-gray-200">
+    <div className="text-black bg-white rounded-xl p-6 md:p-8 space-y-6 w-full shadow shadow-gray-200 border">
       <h2 className="text-xl font-bold text-gray-900">Add Custom Order</h2>
       <Separator />
 
@@ -418,6 +449,18 @@ const OrderIntakeForm: React.FC<Props> = ({
           )}
         </div>
 
+        {/* Product Type */}
+        <div className="flex flex-col md:col-span-2">
+          <label className="text-sm font-medium text-gray-700 mb-1">Product Type</label>
+          <input
+            type="text"
+            value={formData.productType ?? ""}
+            onChange={(e) => setFormData({ ...formData, productType: e.target.value })}
+            placeholder="e.g. Brochure, Custom Print..."
+            className="w-full border border-gray-300 rounded px-3 py-2 focus:outline-none focus:ring-2 focus:ring-black"
+          />
+        </div>
+
         {/* Phone */}
         <div className="flex flex-col">
           <label className="text-sm font-medium text-gray-700 mb-1">Phone Number</label>
@@ -503,41 +546,21 @@ const OrderIntakeForm: React.FC<Props> = ({
         </div>
       </div>
 
-      <div className="flex flex-col">
-        <label className="mb-1 font-medium">Product Type</label>
-        <input
-          type="text"
-          value={formData.productType || ""}
-          onChange={(e) => setFormData({ ...formData, productType: e.target.value })}
-          className="border rounded px-3 py-2"
-        />
-      </div>
-
-      <div className="flex flex-col">
-        <label className="mb-1 font-medium">Specifications</label>
-        <textarea
-          rows={4}
-          value={formData.specifications || ""}
-          onChange={(e) => setFormData({ ...formData, specifications: e.target.value })}
-          className="border rounded px-3 py-2 resize-none"
-        />
-      </div>
-
-      <div className="flex flex-col">
-        <label className="mb-1 font-medium">Urgency</label>
-        <select
-          value={formData.urgency || ""}
-          onChange={(e) => setFormData({ ...formData, urgency: e.target.value })}
-          className="border rounded px-3 py-2"
+      {/* Save Button */}
+      <div className="flex justify-end">
+        <button
+          onClick={handleSave}
+          className={`bg-[#3B66FF] hover:bg-[#2c53d9] text-white font-medium px-6 py-2 rounded shadow transition duration-200 ${
+            !hasProductDetails ? "opacity-60 cursor-not-allowed hover:bg-[#3B66FF]" : ""
+          }`}
+          disabled={!hasProductDetails}
+          title={!hasProductDetails ? "Add product details" : "Save"}
         >
-          <option value="">Select urgency</option>
-          <option value="Low">Low</option>
-          <option value="Normal">Normal</option>
-          <option value="High">High</option>
-          <option value="Urgent">Urgent</option>
-        </select>
+          Save
+        </button>
       </div>
     </div>
   );
-}
+};
 
+export default OrderIntakeForm;

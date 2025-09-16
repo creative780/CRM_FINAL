@@ -13,9 +13,10 @@ import { ordersApi, Order } from "@/lib/orders-api";
 import { toast } from "react-hot-toast";
 import { Trash2 } from "lucide-react";
 
-// 🔑 import global store
+// import global store
 import { useOrderStore } from "@/app/stores/useOrderStore";
 
+/* ===== Types ===== */
 type Urgency = "Urgent" | "High" | "Normal" | "Low";
 type Status = "New" | "Active" | "Completed";
 
@@ -76,6 +77,12 @@ const orderToRow = (order: Order): Row => {
 
 const mapOrders = (orders: Order[]): Row[] => orders.map(orderToRow);
 
+/**
+ * The orders table page displays existing orders grouped by status and
+ * exposes functionality to create, update and delete orders.  It also
+ * demonstrates how to use the globally shared form store when opening the
+ * quotation dialog.
+ */
 export default function OrdersTablePage() {
   const [selectedDate, setSelectedDate] = useState<string>("");
   const [q, setQ] = useState("");
@@ -86,7 +93,7 @@ export default function OrdersTablePage() {
   const [isOpen, setIsOpen] = useState(false);
   const [selected, setSelected] = useState<Row | null>(null);
 
-  // ✅ use global store instead of local useState
+  // use global store instead of local useState
   const { formData, setFormData } = useOrderStore();
 
   const [isCustomOpen, setIsCustomOpen] = useState(false);
@@ -100,15 +107,15 @@ export default function OrdersTablePage() {
         setLoading(true);
         setError(null);
         const apiOrders = await ordersApi.getOrders();
-        
+
         // Convert API orders to Row format
         const convertedOrders = mapOrders(apiOrders);
 
         setSavedOrders(convertedOrders);
         setOrders(convertedOrders);
       } catch (err: any) {
-        setError(err.message || 'Failed to load orders');
-        console.error('Error loading orders:', err);
+        setError(err.message || "Failed to load orders");
+        console.error("Error loading orders:", err);
       } finally {
         setLoading(false);
       }
@@ -123,18 +130,21 @@ export default function OrdersTablePage() {
     return () => window.removeEventListener("orders:updated", onUpdate);
   }, [isCustomOpen]);
 
-  const openForRow = useCallback((row: Row) => {
-    setSelected(row);
-    setFormData((prev: any) => ({
-      ...prev,
-      orderId: row.orderCode,
-      _orderId: row.id,
-      projectDescription: row.title,
-      date: normalizeToYMD(row.date) || row.date,
-      products: prev?.products || [],
-    }));
-    setIsOpen(true);
-  }, [setFormData]);
+  const openForRow = useCallback(
+    (row: Row) => {
+      setSelected(row);
+      setFormData((prev: any) => ({
+        ...prev,
+        orderId: row.orderCode,
+        _orderId: row.id,
+        projectDescription: row.title,
+        date: normalizeToYMD(row.date) || row.date,
+        products: prev?.products || [],
+      }));
+      setIsOpen(true);
+    },
+    [setFormData],
+  );
 
   const createOrder = async (data: OrderIntakeFormValues) => {
     const clientName = (data?.clientName ?? "").trim();
@@ -150,9 +160,9 @@ export default function OrdersTablePage() {
     const orderDetails = (data?.orderDetails ?? "").trim();
     const rawProductType = (data as any)?.productType;
     const productType =
-      (typeof rawProductType === "string" && rawProductType.trim().length > 0
+      typeof rawProductType === "string" && rawProductType.trim().length > 0
         ? rawProductType.trim()
-        : productNames.join(", ") || orderDetails);
+        : productNames.join(", ") || orderDetails;
     const rawSpecs = data?.specifications;
     const specs = typeof rawSpecs === "string" && rawSpecs.trim().length > 0 ? rawSpecs.trim() : orderDetails;
     const urgency = data?.urgency ?? "Normal";
@@ -186,16 +196,16 @@ export default function OrdersTablePage() {
       setCustomFormData(createOrderIntakeDefaults());
       toast.success("Order created successfully!");
     } catch (err: any) {
-      setError(err.message || 'Failed to create order');
-      toast.error(`Failed to create order: ${err.message || 'Unknown error'}`);
-      console.error('Error creating order:', err);
+      setError(err.message || "Failed to create order");
+      toast.error(`Failed to create order: ${err.message || "Unknown error"}`);
+      console.error("Error creating order:", err);
     } finally {
       setLoading(false);
     }
   };
 
   const deleteOrder = async (orderId: number, orderCode?: string) => {
-    if (!confirm('Are you sure you want to delete this order?')) return;
+    if (!confirm("Are you sure you want to delete this order?")) return;
 
     try {
       await ordersApi.deleteOrder(orderId);
@@ -209,7 +219,7 @@ export default function OrdersTablePage() {
       toast.success(orderCode ? `Order ${orderCode} deleted successfully!` : "Order deleted successfully!");
     } catch (err: any) {
       toast.error(`Failed to delete order: ${err.message}`);
-      console.error('Error deleting order:', err);
+      console.error("Error deleting order:", err);
     }
   };
 
@@ -258,13 +268,12 @@ export default function OrdersTablePage() {
               </tr>
             ) : (
               rows.map((r, i) => (
-                <tr
-                  key={r.id}
-                  className="border-b hover:bg-gray-50"
-                >
+                <tr key={r.id} className="border-b hover:bg-gray-50">
                   <td className="px-3 py-3 text-center">{i + 1}</td>
                   <td className="px-3 py-3 text-center font-medium text-gray-900">{r.orderCode}</td>
-                  <td className="px-3 py-3 text-center cursor-pointer" onClick={() => openForRow(r)}>{r.title}</td>
+                  <td className="px-3 py-3 text-center cursor-pointer" onClick={() => openForRow(r)}>
+                    {r.title}
+                  </td>
                   <td className="px-3 py-3 text-center">{normalizeToYMD(r.date) || r.date}</td>
                   <td className="px-3 py-3 text-center">{r.time}</td>
                   <td className="px-3 py-3 text-center">{urgencyBadge(r.urgency)}</td>
@@ -298,10 +307,7 @@ export default function OrdersTablePage() {
       <div className="max-w-7xl mx-auto pb-16">
         <div className="flex items-center justify-between mt-2">
           <h1 className="text-4xl font-bold text-[#891F1A]">Sales Orders</h1>
-          <Button
-            onClick={() => setIsCustomOpen(true)}
-            className="bg-[#891F1A] text-white hover:bg-red-900 transition"
-          >
+          <Button onClick={() => setIsCustomOpen(true)} className="bg-[#891F1A] text-white hover:bg-red-900 transition">
             + Add a Custom Order
           </Button>
         </div>
@@ -328,14 +334,11 @@ export default function OrdersTablePage() {
             <div className="text-lg text-gray-600">Loading orders...</div>
           </div>
         )}
-        
+
         {error && (
           <div className="mt-6 text-center py-8">
             <div className="text-lg text-red-600">Error: {error}</div>
-            <Button 
-              onClick={() => window.location.reload()} 
-              className="mt-2 bg-[#891F1A] text-white hover:bg-[#6c1714]"
-            >
+            <Button onClick={() => window.location.reload()} className="mt-2 bg-[#891F1A] text-white hover:bg-[#6c1714]">
               Retry
             </Button>
           </div>
@@ -357,7 +360,6 @@ export default function OrdersTablePage() {
           <div className="fixed inset-0 bg-black/40" />
           <div className="fixed inset-0 flex items-center justify-center p-4">
             <Dialog.Panel className="relative w-full max-w-6xl bg-white rounded-2xl shadow-2xl flex flex-col max-h-[90vh]">
-
               {/* Header */}
               <div className="sticky top-0 bg-white border-b px-6 py-4 z-10 flex items-center justify-between">
                 <div>
@@ -369,17 +371,14 @@ export default function OrdersTablePage() {
                     {selected && " · "} {selected?.time}
                   </p>
                 </div>
-                <button
-                  onClick={() => setIsOpen(false)}
-                  className="rounded-lg border px-3 py-1.5 text-sm hover:bg-gray-50"
-                >
+                <button onClick={() => setIsOpen(false)} className="rounded-lg border px-3 py-1.5 text-sm hover:bg-gray-50">
                   Close
                 </button>
               </div>
 
               {/* Body */}
               <div className="flex-1 overflow-y-auto px-6 py-6">
-                {/* 🔥 Sales fills everything here, and it writes into global formData */}
+                {/* Sales fills everything here, and it writes into global formData */}
                 <QuotationFormWithPreview formData={formData} setFormData={setFormData} />
               </div>
 
@@ -405,27 +404,28 @@ export default function OrdersTablePage() {
                     <option value="Production">Production</option>
                   </select>
                 </div>
-                
+
                 <div className="flex items-center gap-3">
-                  <Button
-                    onClick={() => setIsOpen(false)}
-                    variant="outline"
-                  >
+                  <Button onClick={() => setIsOpen(false)} variant="outline">
                     Cancel
                   </Button>
                   <Button
                     onClick={async () => {
                       if (!selected) return;
-                      
+
                       try {
                         // Update order in backend
                         await ordersApi.updateOrder(selected.id, {
-                          client_name: formData?.clientName || selected.title.split(' - ')[1] || '',
-                          product_type: formData?.productType || selected.title.split(' - ')[0] || '',
-                          specs: formData?.specifications || '',
+                          client_name: formData?.clientName || selected.title.split(" - ")[1] || "",
+                          product_type: formData?.productType || selected.title.split(" - ")[0] || "",
+                          specs: formData?.specifications || "",
                           urgency: formData?.urgency || selected.urgency,
-                          status: selected.status === 'Completed' ? 'completed' :
-                                 selected.status === 'Active' ? 'in_progress' : 'new',
+                          status:
+                            selected.status === "Completed"
+                              ? "completed"
+                              : selected.status === "Active"
+                              ? "in_progress"
+                              : "new",
                         });
 
                         // Refresh orders list
@@ -435,16 +435,16 @@ export default function OrdersTablePage() {
                         setSavedOrders(convertedOrders);
                         setOrders(convertedOrders);
                         setIsOpen(false);
-                        toast.success('Order updated successfully!');
+                        toast.success("Order updated successfully!");
                       } catch (err: any) {
                         toast.error(`Failed to update order: ${err.message}`);
-                        console.error('Error updating order:', err);
+                        console.error("Error updating order:", err);
                       }
                     }}
                     disabled={loading}
                     className="bg-[#891F1A] text-white hover:bg-[#6c1714]"
                   >
-                    {loading ? 'Saving...' : 'Save Changes'}
+                    {loading ? "Saving..." : "Save Changes"}
                   </Button>
                 </div>
               </div>
@@ -460,38 +460,22 @@ export default function OrdersTablePage() {
           <div className="fixed inset-0 flex items-center justify-center p-4">
             <Dialog.Panel className="w-full max-w-6xl bg-white rounded-2xl shadow-2xl ring-1 ring-black/5 overflow-hidden flex flex-col max-h-[90vh]">
               <div className="flex items-center justify-between px-5 py-4 border-b bg-white sticky top-0 z-10">
-                <Dialog.Title className="text-lg font-semibold text-[#891F1A]">
-                  Add a Custom Order
-                </Dialog.Title>
-                <button
-                  onClick={() => setIsCustomOpen(false)}
-                  className="rounded-lg border px-3 py-1.5 text-sm hover:bg-gray-50"
-                >
+                <Dialog.Title className="text-lg font-semibold text-[#891F1A]">Add a Custom Order</Dialog.Title>
+                <button onClick={() => setIsCustomOpen(false)} className="rounded-lg border px-3 py-1.5 text-sm hover:bg-gray-50">
                   Close
                 </button>
               </div>
 
               <div className="flex-1 overflow-y-auto px-6 py-6">
-                <OrderIntakeForm
-                  formData={customFormData}
-                  setFormData={setCustomFormData}
-                  requireProductsAndFiles
-                />
+                <OrderIntakeForm formData={customFormData} setFormData={setCustomFormData} requireProductsAndFiles />
               </div>
-              
+
               <div className="px-6 py-4 border-t bg-gray-50 flex justify-end space-x-3">
-                <Button
-                  onClick={() => setIsCustomOpen(false)}
-                  variant="outline"
-                >
+                <Button onClick={() => setIsCustomOpen(false)} variant="outline">
                   Cancel
                 </Button>
-                <Button
-                  onClick={() => createOrder(customFormData)}
-                  disabled={loading}
-                  className="bg-[#891F1A] text-white hover:bg-[#6c1714]"
-                >
-                  {loading ? 'Creating...' : 'Create Order'}
+                <Button onClick={() => createOrder(customFormData)} disabled={loading} className="bg-[#891F1A] text-white hover:bg-[#6c1714]">
+                  {loading ? "Creating..." : "Create Order"}
                 </Button>
               </div>
             </Dialog.Panel>
