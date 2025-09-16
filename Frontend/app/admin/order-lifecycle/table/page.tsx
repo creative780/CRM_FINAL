@@ -4,7 +4,10 @@ import { useMemo, useState, useCallback, Fragment, useEffect } from "react";
 import { Dialog, Transition } from "@headlessui/react";
 import { Button } from "@/app/components/Button";
 import QuotationFormWithPreview from "@/app/components/quotation/QuotationFormWithPreview";
-import OrderIntakeForm from "@/app/components/order-stages/OrderIntakeForm";
+import OrderIntakeForm, {
+  createOrderIntakeDefaults,
+  OrderIntakeFormValues,
+} from "@/app/components/order-stages/OrderIntakeForm";
 import DashboardNavbar from "@/app/components/navbar/DashboardNavbar";
 import { ordersApi, Order } from "@/lib/orders-api";
 import { toast } from "react-hot-toast";
@@ -17,7 +20,8 @@ type Urgency = "Urgent" | "High" | "Normal" | "Low";
 type Status = "New" | "Active" | "Completed";
 
 interface Row {
-  id: string;
+  id: number;
+  orderCode: string;
   title: string;
   date: string;
   time: string;
@@ -49,6 +53,29 @@ const normalizeToYMD = (input: string): string => {
   return toLocalYMD(d);
 };
 
+const statusMap: Record<string, Status> = {
+  new: "New",
+  in_progress: "Active",
+  completed: "Completed",
+  delivered: "Completed",
+};
+
+const orderToRow = (order: Order): Row => {
+  const [datePart = "", timePart = ""] = (order.created_at || "").split("T");
+  const time = timePart ? timePart.split(".")[0]?.substring(0, 5) ?? "" : "";
+  return {
+    id: order.id,
+    orderCode: order.order_id,
+    title: `${order.product_type} - ${order.client_name}`,
+    date: datePart,
+    time,
+    urgency: (order.urgency || "Normal") as Urgency,
+    status: statusMap[order.status as keyof typeof statusMap] ?? "New",
+  };
+};
+
+const mapOrders = (orders: Order[]): Row[] => orders.map(orderToRow);
+
 export default function OrdersTablePage() {
   const [selectedDate, setSelectedDate] = useState<string>("");
   const [q, setQ] = useState("");
@@ -63,12 +90,7 @@ export default function OrdersTablePage() {
   const { formData, setFormData } = useOrderStore();
 
   const [isCustomOpen, setIsCustomOpen] = useState(false);
-  const [customFormData, setCustomFormData] = useState<any>({
-    clientName: "",
-    productType: "",
-    specs: "",
-    urgency: "Normal",
-  });
+  const [customFormData, setCustomFormData] = useState<OrderIntakeFormValues>(() => createOrderIntakeDefaults());
 
   const [savedOrders, setSavedOrders] = useState<Row[]>([]);
 
@@ -80,15 +102,8 @@ export default function OrdersTablePage() {
         const apiOrders = await ordersApi.getOrders();
         
         // Convert API orders to Row format
-        const convertedOrders: Row[] = apiOrders.map(order => ({
-          id: order.order_id,
-          title: `${order.product_type} - ${order.client_name}`,
-          date: order.created_at.split('T')[0],
-          time: order.created_at.split('T')[1].split('.')[0].substring(0, 5),
-          urgency: order.urgency as Urgency,
-          status: order.status === 'new' ? 'New' : order.status === 'in_progress' ? 'Active' : 'Completed' as Status,
-        }));
-        
+        const convertedOrders = mapOrders(apiOrders);
+
         setSavedOrders(convertedOrders);
         setOrders(convertedOrders);
       } catch (err: any) {
@@ -112,7 +127,8 @@ export default function OrdersTablePage() {
     setSelected(row);
     setFormData((prev: any) => ({
       ...prev,
-      orderId: row.id,
+      orderId: row.orderCode,
+      _orderId: row.id,
       projectDescription: row.title,
       date: normalizeToYMD(row.date) || row.date,
       products: prev?.products || [],
@@ -120,64 +136,77 @@ export default function OrdersTablePage() {
     setIsOpen(true);
   }, [setFormData]);
 
-  const createOrder = async (data: any) => {
+  const createOrder = async (data: OrderIntakeFormValues) => {
+    const clientName = (data?.clientName ?? "").trim();
+    const productNames = Array.isArray(data?.products)
+      ? data.products
+          .map((p: any) => {
+            if (!p) return "";
+            if (typeof p === "string") return p;
+            return typeof p.name === "string" ? p.name : "";
+          })
+          .filter((name: string) => name && name.trim().length > 0)
+      : [];
+    const orderDetails = (data?.orderDetails ?? "").trim();
+    const rawProductType = (data as any)?.productType;
+    const productType =
+      (typeof rawProductType === "string" && rawProductType.trim().length > 0
+        ? rawProductType.trim()
+        : productNames.join(", ") || orderDetails);
+    const rawSpecs = data?.specifications;
+    const specs = typeof rawSpecs === "string" && rawSpecs.trim().length > 0 ? rawSpecs.trim() : orderDetails;
+    const urgency = data?.urgency ?? "Normal";
+
+    if (!clientName) {
+      toast.error("Please enter a client name");
+      return;
+    }
+    if (!productType) {
+      toast.error("Please add at least one product before creating the order");
+      return;
+    }
+
     try {
       setLoading(true);
-      const newOrder = await ordersApi.createOrder({
-        client_name: data.clientName,
-        product_type: data.productType,
-        specs: data.specs,
-        urgency: data.urgency,
+      setError(null);
+      await ordersApi.createOrder({
+        clientName,
+        productType,
+        specs,
+        urgency,
       });
-      
+
       // Refresh orders list
       const apiOrders = await ordersApi.getOrders();
-      const convertedOrders: Row[] = apiOrders.map(order => ({
-        id: order.order_id,
-        title: `${order.product_type} - ${order.client_name}`,
-        date: order.created_at.split('T')[0],
-        time: order.created_at.split('T')[1].split('.')[0].substring(0, 5),
-        urgency: order.urgency as Urgency,
-        status: order.status === 'new' ? 'New' : order.status === 'in_progress' ? 'Active' : 'Completed' as Status,
-      }));
-      
+      const convertedOrders = mapOrders(apiOrders);
+
       setSavedOrders(convertedOrders);
       setOrders(convertedOrders);
       setIsCustomOpen(false);
-      setCustomFormData({
-        clientName: "",
-        productType: "",
-        specs: "",
-        urgency: "Normal",
-      });
+      setCustomFormData(createOrderIntakeDefaults());
+      toast.success("Order created successfully!");
     } catch (err: any) {
       setError(err.message || 'Failed to create order');
+      toast.error(`Failed to create order: ${err.message || 'Unknown error'}`);
       console.error('Error creating order:', err);
     } finally {
       setLoading(false);
     }
   };
 
-  const deleteOrder = async (orderId: string) => {
+  const deleteOrder = async (orderId: number, orderCode?: string) => {
     if (!confirm('Are you sure you want to delete this order?')) return;
-    
+
     try {
-      await ordersApi.deleteOrder(parseInt(orderId));
-      
+      await ordersApi.deleteOrder(orderId);
+
       // Refresh orders list
       const apiOrders = await ordersApi.getOrders();
-      const convertedOrders: Row[] = apiOrders.map(order => ({
-        id: order.order_id,
-        title: `${order.product_type} - ${order.client_name}`,
-        date: order.created_at.split('T')[0],
-        time: order.created_at.split('T')[1].split('.')[0].substring(0, 5),
-        urgency: order.urgency as Urgency,
-        status: order.status === 'new' ? 'New' : order.status === 'in_progress' ? 'Active' : 'Completed' as Status,
-      }));
-      
+      const convertedOrders = mapOrders(apiOrders);
+
       setSavedOrders(convertedOrders);
       setOrders(convertedOrders);
-      toast.success('Order deleted successfully!');
+      toast.success(orderCode ? `Order ${orderCode} deleted successfully!` : "Order deleted successfully!");
     } catch (err: any) {
       toast.error(`Failed to delete order: ${err.message}`);
       console.error('Error deleting order:', err);
@@ -191,7 +220,10 @@ export default function OrdersTablePage() {
   const filtered = useMemo(() => {
     return ALL.filter((r) => {
       const okDay = selectedDate ? normalizeToYMD(r.date) === selectedDate : true;
-      const hay = [r.id, r.title, r.date, r.time, r.urgency].join(" ").toLowerCase();
+      const hay = [String(r.id), r.orderCode, r.title, r.date, r.time, r.urgency]
+        .filter(Boolean)
+        .join(" ")
+        .toLowerCase();
       const okQuery = q.trim() === "" ? true : hay.includes(q.toLowerCase());
       return okDay && okQuery;
     });
@@ -231,7 +263,7 @@ export default function OrdersTablePage() {
                   className="border-b hover:bg-gray-50"
                 >
                   <td className="px-3 py-3 text-center">{i + 1}</td>
-                  <td className="px-3 py-3 text-center font-medium text-gray-900">{r.id}</td>
+                  <td className="px-3 py-3 text-center font-medium text-gray-900">{r.orderCode}</td>
                   <td className="px-3 py-3 text-center cursor-pointer" onClick={() => openForRow(r)}>{r.title}</td>
                   <td className="px-3 py-3 text-center">{normalizeToYMD(r.date) || r.date}</td>
                   <td className="px-3 py-3 text-center">{r.time}</td>
@@ -240,7 +272,7 @@ export default function OrdersTablePage() {
                     <button
                       onClick={(e) => {
                         e.stopPropagation();
-                        deleteOrder(r.id);
+                        deleteOrder(r.id, r.orderCode);
                       }}
                       className="text-red-400 hover:text-red-600 transition-colors"
                       title="Delete order"
@@ -330,7 +362,7 @@ export default function OrdersTablePage() {
               <div className="sticky top-0 bg-white border-b px-6 py-4 z-10 flex items-center justify-between">
                 <div>
                   <Dialog.Title className="text-lg font-semibold text-[#891F1A]">
-                    Quotation for {selected?.id}
+                    Quotation for {selected?.orderCode}
                   </Dialog.Title>
                   <p className="text-xs text-gray-500">
                     {selected?.title} · {selected && (normalizeToYMD(selected.date) || selected.date)}
@@ -387,7 +419,7 @@ export default function OrdersTablePage() {
                       
                       try {
                         // Update order in backend
-                        await ordersApi.updateOrder(parseInt(selected.id), {
+                        await ordersApi.updateOrder(selected.id, {
                           client_name: formData?.clientName || selected.title.split(' - ')[1] || '',
                           product_type: formData?.productType || selected.title.split(' - ')[0] || '',
                           specs: formData?.specifications || '',
@@ -398,15 +430,8 @@ export default function OrdersTablePage() {
 
                         // Refresh orders list
                         const apiOrders = await ordersApi.getOrders();
-                        const convertedOrders: Row[] = apiOrders.map(order => ({
-                          id: order.order_id,
-                          title: `${order.product_type} - ${order.client_name}`,
-                          date: order.created_at.split('T')[0],
-                          time: order.created_at.split('T')[1].split('.')[0].substring(0, 5),
-                          urgency: order.urgency as Urgency,
-                          status: order.status === 'new' ? 'New' : order.status === 'in_progress' ? 'Active' : 'Completed' as Status,
-                        }));
-                        
+                        const convertedOrders = mapOrders(apiOrders);
+
                         setSavedOrders(convertedOrders);
                         setOrders(convertedOrders);
                         setIsOpen(false);

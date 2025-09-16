@@ -1,5 +1,6 @@
 "use client";
 import { useEffect, useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "../../components/Tabs";
 import { Button } from "../../components/Button";
 import DashboardNavbar from "@/app/components/navbar/DashboardNavbar";
@@ -92,7 +93,7 @@ const STAGE_REGISTRY: Record<
   },
   deliveryProcess: {
     label: "Delivery Process",
-    requiredFields: ["phone", "deliveryCode", "deliveryStatus"],
+    requiredFields: ["deliveryCode"],
     render: ({ formData, setFormData, deliveryCode, generateCode, riderPhoto, setRiderPhoto, handleUpload, canGenerate }) => (
       <DeliveryProcessForm
         formData={formData}
@@ -113,6 +114,7 @@ const STAGE_REGISTRY: Record<
 --------------------------------------------------------------------------- */
 export default function OrderLifecyclePage() {
   const role = getUserRole();
+  const router = useRouter();
 
   // ⬇⬇⬇ All roles see ALL stages (no role-based filtering)
   const visibleStageKeys: StageKey[] = useMemo(() => {
@@ -132,6 +134,7 @@ export default function OrderLifecyclePage() {
   const [currentIndex, setCurrentIndex] = useState(0);
   const [deliveryCode, setDeliveryCode] = useState("");
   const [riderPhoto, setRiderPhoto] = useState<File | null>(null);
+  const canGenerate = deliveryCode === "";
 
   useEffect(() => {
     setCurrentIndex((i) => Math.min(i, Math.max(visibleStageKeys.length - 1, 0)));
@@ -151,6 +154,9 @@ export default function OrderLifecyclePage() {
     machineCost: 0,
     designCost: 0,
     packagingCost: 0,
+    deleiveryCost: 0,
+    discount: 0,
+    advancePaid: 0,
     requirementsFiles: [],
     sku: "",
     qty: 0,
@@ -159,36 +165,20 @@ export default function OrderLifecyclePage() {
     deliveryStatus: "Dispatched",
   });
 
-  const generateCode = async (): Promise<void> => {
-    if (!formData._orderId) {
-      toast.error("Please save the order first");
-      return;
-    }
-    if (!formData.phone) {
-      toast.error("Phone number required");
-      return;
-    }
-    try {
-      const apiBase = process.env.NEXT_PUBLIC_API_BASE || "http://localhost:8000";
-      const token = typeof window !== "undefined" ? localStorage.getItem("admin_token") : null;
-      const resp = await fetch(`${apiBase}/api/delivery/send-code`, {
-        method: "POST",
-        body: JSON.stringify({ orderId: formData._orderId, phone: formData.phone }),
-        headers: {
-          "Content-Type": "application/json",
-          ...(token ? { Authorization: `Bearer ${token}` } : {}),
-        },
-      });
-      if (!resp.ok) throw new Error(`Send code failed (${resp.status})`);
-      const data = await resp.json();
-      setDeliveryCode(data.code);
-      setFormData((p: any) => ({ ...p, deliveryCode: data.code }));
-    } catch (e) {
-      toast.error("Failed to generate code");
-      if (process.env.NODE_ENV !== "production") {
-        console.error(e);
-      }
-    }
+  const generateCode = async () => {
+    const code = Math.floor(100000 + Math.random() * 900000).toString();
+    setDeliveryCode(code);
+    setFormData((prev: any) => ({ ...prev, deliveryCode: code }));
+    const apiBase = process.env.NEXT_PUBLIC_API_BASE || "http://localhost:8000";
+    const token = typeof window !== "undefined" ? localStorage.getItem("admin_token") : null;
+    await fetch(`${apiBase}/api/send-delivery-code`, {
+      method: "POST",
+      body: JSON.stringify({ code, phone: "+971XXXXXXXXX" }),
+      headers: {
+        "Content-Type": "application/json",
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      },
+    });
   };
 
   const handleUpload = async () => {
@@ -258,7 +248,8 @@ export default function OrderLifecyclePage() {
       const token = typeof window !== "undefined" ? localStorage.getItem("admin_token") : null;
       const headers: any = { "Content-Type": "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}) };
 
-      if (!formData._orderId) {
+      let orderId = formData._orderId;
+      if (!orderId) {
         // Create order
         const resp = await fetch(`${apiBase}/api/orders`, {
           method: "POST",
@@ -272,22 +263,82 @@ export default function OrderLifecyclePage() {
         });
         if (!resp.ok) throw new Error(`Create failed (${resp.status})`);
         const created = await resp.json();
-        setFormData((p: any) => ({ ...p, _orderId: created.id }));
+        orderId = created.id;
+        setFormData((p: any) => ({ ...p, _orderId: orderId }));
       } else {
         // Update current stage payload
         const stageKey = visibleStageKeys[currentIndex];
-        let stage = "" as any; let payload: any = {};
-        if (stageKey === "quotation") { stage = "quotation"; payload = { labour_cost: formData.labourCost, finishing_cost: formData.finishingCost, paper_cost: formData.paperCost, design_cost: formData.designCost }; }
-        if (stageKey === "designProduction") { stage = "design"; payload = { assigned_designer: formData.assignedDesigner, requirements_files: formData.requirementsFiles, design_status: formData.designStatus }; }
-        if (stageKey === "printingQA") { stage = "printing"; payload = { print_operator: formData.printOperator, print_time: formData.printTime, batch_info: formData.batchInfo, print_status: formData.printStatus, qa_checklist: formData.qaChecklist }; }
-        if (stageKey === "clientApproval") { stage = "approval"; payload = { client_approval_files: formData.clientApprovalFiles, approved_at: formData.approvedAt }; }
-        if (stageKey === "deliveryProcess") { stage = "delivery"; payload = { delivery_code: formData.deliveryCode, delivery_status: formData.deliveryStatus, delivered_at: formData.deliveredAt, rider_photo_path: formData.riderPhotoPath }; }
+        let stage = "" as any;
+        let payload: any = {};
+        if (stageKey === "quotation") {
+          stage = "quotation";
+          payload = {
+            labour_cost: formData.labourCost,
+            finishing_cost: formData.finishingCost,
+            paper_cost: formData.paperCost,
+            design_cost: formData.designCost,
+            delivery_cost: formData.deleiveryCost,
+            discount: formData.discount,
+            advance_paid: formData.advancePaid,
+          };
+        }
+        if (stageKey === "designProduction") {
+          stage = "design";
+          payload = {
+            assigned_designer: formData.assignedDesigner,
+            requirements_files: formData.requirementsFiles,
+            design_status: formData.designStatus,
+          };
+        }
+        if (stageKey === "printingQA") {
+          stage = "printing";
+          payload = {
+            print_operator: formData.printOperator,
+            print_time: formData.printTime,
+            batch_info: formData.batchInfo,
+            print_status: formData.printStatus,
+            qa_checklist: formData.qaChecklist,
+          };
+        }
+        if (stageKey === "clientApproval") {
+          stage = "approval";
+          payload = {
+            client_approval_files: formData.clientApprovalFiles,
+            approved_at: formData.approvedAt,
+          };
+        }
+        if (stageKey === "deliveryProcess") {
+          stage = "delivery";
+          payload = {
+            delivery_code: formData.deliveryCode,
+            delivered_at: formData.deliveredAt,
+            rider_photo_path: formData.riderPhotoPath,
+          };
+        }
         if (stage) {
-          const resp = await fetch(`${apiBase}/api/orders/${formData._orderId}`, { method: "PATCH", headers, body: JSON.stringify({ stage, payload }) });
+          const resp = await fetch(`${apiBase}/api/orders/${orderId}`, {
+            method: "PATCH",
+            headers,
+            body: JSON.stringify({ stage, payload }),
+          });
           if (!resp.ok) throw new Error(`Update failed (${resp.status})`);
         }
       }
+
       toast.success("Order saved successfully!");
+
+      // After final stage, redirect user and flash confirmation
+      if (currentIndex === stages.length - 1 && orderId) {
+        try {
+          if (typeof window !== "undefined") {
+            window.localStorage.setItem(
+              "orders_flash",
+              JSON.stringify({ id: orderId, name: formData.clientName })
+            );
+          }
+        } catch {}
+        router.push("/admin/orders/all");
+      }
     } catch (e: any) {
       toast.error(e?.message || "Save failed");
     }
@@ -301,7 +352,11 @@ export default function OrderLifecyclePage() {
     for (let field of required) {
       const value = formData[field];
       const isMissing =
-        value === "" || value === null || value === undefined || (typeof value === "number" && isNaN(value));
+        value === null ||
+        value === undefined ||
+        (typeof value === "string" && value.trim() === "") ||
+        (typeof value === "number" && isNaN(value)) ||
+        (Array.isArray(value) && value.length === 0);
       if (isMissing) missing.push(field);
     }
     if (missing.length > 0) {
@@ -426,7 +481,7 @@ export default function OrderLifecyclePage() {
                   riderPhoto,
                   setRiderPhoto,
                   handleUpload,
-                  canGenerate: !!formData._orderId,
+                  canGenerate,
                 })}
 
                 {/* Navigation Buttons */}

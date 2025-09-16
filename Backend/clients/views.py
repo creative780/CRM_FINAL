@@ -55,4 +55,10 @@ class ClientViewSet(viewsets.ModelViewSet):
     filter_backends = [filters.SearchFilter]
     search_fields = ['org__name', 'status']
 
+    def perform_create(self, serializer):
+        if 'account_owner' not in serializer.validated_data:
+            serializer.save(account_owner=self.request.user)
+        else:
+            serializer.save()
+
 # Create your views here.

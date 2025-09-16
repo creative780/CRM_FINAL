@@ -52,12 +52,19 @@ export interface OrderDelivery {
   rider_photo_path: string;
 }
 
+export interface OrderCreatePayload {
+  clientName: string;
+  productType: string;
+  specs?: string;
+  urgency?: string;
+}
+
 export const ordersApi = {
   // Orders CRUD
-  getOrders: (): Promise<Order[]> => 
+  getOrders: (): Promise<Order[]> =>
     api.get('/api/orders/'),
-  
-  createOrder: (data: Partial<Order>): Promise<Order> => 
+
+  createOrder: (data: OrderCreatePayload): Promise<Order> =>
     api.post('/api/orders', data),
   
   getOrder: (id: number): Promise<Order> => 

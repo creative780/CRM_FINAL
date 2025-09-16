@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useMemo, useRef, useState, useEffect } from "react";
+import React, { useCallback, useRef, useState, useEffect } from "react";
 
 /** ===== Types ===== */
 type Urgency = "Urgent" | "High" | "Normal" | "Low";
@@ -10,8 +10,29 @@ export type Row = { id: string; title: string; date: string; time: string; urgen
 type IntakeProduct = { name: string; quantity: number };
 type UploadMeta = { name: string; size: number; type: string; url: string };
 
+export interface OrderIntakeFormValues {
+  clientName: string;
+  companyName: string;
+  phone: string;
+  email: string;
+  address: string;
+  specifications: string;
+  urgency: Urgency;
+  status: Status;
+  orderId: string;
+  products: IntakeProduct[];
+  orderDetails: string;
+  showProductDropdown: boolean;
+  previewDate: string;
+  previewTime: string;
+  [key: string]: any;
+}
+
 type Props = {
   onSaved?: (row: Row) => void; // parent ko row bhejna
+  formData?: OrderIntakeFormValues;
+  setFormData?: React.Dispatch<React.SetStateAction<any>>;
+  requireProductsAndFiles?: boolean;
 };
 
 /** ===== Helpers ===== */
@@ -56,27 +77,53 @@ const GROUPED_PRODUCTS: Record<string, string[]> = {
   Z: ["Zipper Pouch", "Z-Fold Brochure"],
 };
 
-const OrderIntakeForm: React.FC<Props> = ({ onSaved = () => {} }) => {
-  const productDropdownRef = useRef<HTMLDivElement>(null);
-
-  // preview ke liye initial time; ACTUAL date/time save ke waqt capture hoga
-  const initialNow = useMemo(() => new Date(), []);
-  const [formData, setFormData] = useState<any>({
+export const createOrderIntakeDefaults = (): OrderIntakeFormValues => {
+  const now = new Date();
+  return {
     clientName: "",
     companyName: "",
     phone: "",
     email: "",
     address: "",
     specifications: "",
-    urgency: "Normal" as Urgency,
-    status: "New" as Status, // 🔽 yahan se choose kar sakte ho: New/Active/Completed
+    urgency: "Normal",
+    status: "New",
     orderId: `ORD-${Math.random().toString(36).slice(2, 8).toUpperCase()}`,
-    products: [] as IntakeProduct[],
+    products: [],
     orderDetails: "",
     showProductDropdown: false,
-    previewDate: toLocalYMD(initialNow),
-    previewTime: toLocalHM(initialNow),
-  });
+    previewDate: toLocalYMD(now),
+    previewTime: toLocalHM(now),
+  };
+};
+
+const OrderIntakeForm: React.FC<Props> = ({
+  onSaved = () => {},
+  formData: controlledFormData,
+  setFormData: controlledSetFormData,
+  requireProductsAndFiles = false,
+}) => {
+  const productDropdownRef = useRef<HTMLDivElement>(null);
+
+  // preview ke liye initial time; ACTUAL date/time save ke waqt capture hoga
+  const isControlled = controlledFormData !== undefined && controlledSetFormData !== undefined;
+  const [internalFormData, setInternalFormData] = useState<OrderIntakeFormValues>(() =>
+    controlledFormData ? { ...createOrderIntakeDefaults(), ...controlledFormData } : createOrderIntakeDefaults()
+  );
+  const formData = (isControlled ? controlledFormData : internalFormData) || createOrderIntakeDefaults();
+  const setFormData = useCallback(
+    (update: any) => {
+      if (isControlled && controlledSetFormData) {
+        controlledSetFormData(update);
+      } else {
+        setInternalFormData((prev) => {
+          const next = typeof update === "function" ? update(prev) : update;
+          return next ?? prev;
+        });
+      }
+    },
+    [isControlled, controlledSetFormData]
+  );
 
   const [searchText, setSearchText] = useState("");
   const [addingCustomProduct, setAddingCustomProduct] = useState(false);
@@ -93,7 +140,7 @@ const OrderIntakeForm: React.FC<Props> = ({ onSaved = () => {} }) => {
     };
     document.addEventListener("mousedown", handleClickOutside);
     return () => document.removeEventListener("mousedown", handleClickOutside);
-  }, []);
+  }, [setFormData]);
 
   /** ===== Files ===== */
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -159,6 +206,10 @@ const OrderIntakeForm: React.FC<Props> = ({ onSaved = () => {} }) => {
       alert("Please add at least one product before saving.");
       return;
     }
+    if (requireProductsAndFiles && !hasAtLeastOneFile) {
+      alert("Please upload at least one file before saving.");
+      return;
+    }
 
     const now = new Date();
     const date = toLocalYMD(now);
@@ -182,23 +233,7 @@ const OrderIntakeForm: React.FC<Props> = ({ onSaved = () => {} }) => {
     onSaved(row); // parent page ko bhej do
 
     // reset for next time
-    const nn = new Date();
-    setFormData({
-      clientName: "",
-      companyName: "",
-      phone: "",
-      email: "",
-      address: "",
-      specifications: "",
-      urgency: "Normal" as Urgency,
-      status: "New" as Status,
-      orderId: `ORD-${Math.random().toString(36).slice(2, 8).toUpperCase()}`,
-      products: [],
-      orderDetails: "",
-      showProductDropdown: false,
-      previewDate: toLocalYMD(nn),
-      previewTime: toLocalHM(nn),
-    });
+    setFormData(createOrderIntakeDefaults());
     setIntakeFiles([]);
     setSearchText("");
     setAddingCustomProduct(false);
@@ -215,7 +250,7 @@ const OrderIntakeForm: React.FC<Props> = ({ onSaved = () => {} }) => {
           <label className="text-sm font-medium text-gray-700 mb-1">Client Name</label>
           <input
             type="text"
-            value={formData.clientName}
+            value={formData.clientName ?? ""}
             onChange={(e) => setFormData({ ...formData, clientName: e.target.value })}
             className="w-full border border-gray-300 rounded px-3 py-2 focus:outline-none focus:ring-2 focus:ring-black"
           />
@@ -226,7 +261,7 @@ const OrderIntakeForm: React.FC<Props> = ({ onSaved = () => {} }) => {
           <label className="text-sm font-medium text-gray-700 mb-1">Company Name</label>
           <input
             type="text"
-            value={formData.companyName}
+            value={formData.companyName ?? ""}
             onChange={(e) => setFormData({ ...formData, companyName: e.target.value })}
             className="w-full border border-gray-300 rounded px-3 py-2 focus:outline-none focus:ring-2 focus:ring-black"
           />
@@ -237,7 +272,7 @@ const OrderIntakeForm: React.FC<Props> = ({ onSaved = () => {} }) => {
           <label className="text-sm font-medium text-gray-700 mb-1">Date (saved at submit)</label>
           <input
             type="text"
-            value={formData.previewDate}
+            value={formData.previewDate ?? ""}
             readOnly
             className="w-full border border-gray-300 rounded px-3 py-2 bg-gray-50 text-gray-700"
           />
@@ -246,7 +281,7 @@ const OrderIntakeForm: React.FC<Props> = ({ onSaved = () => {} }) => {
           <label className="text-sm font-medium text-gray-700 mb-1">Time (saved at submit)</label>
           <input
             type="text"
-            value={formData.previewTime}
+            value={formData.previewTime ?? ""}
             readOnly
             className="w-full border border-gray-300 rounded px-3 py-2 bg-gray-50 text-gray-700"
           />
@@ -388,7 +423,7 @@ const OrderIntakeForm: React.FC<Props> = ({ onSaved = () => {} }) => {
           <label className="text-sm font-medium text-gray-700 mb-1">Phone Number</label>
           <input
             type="tel"
-            value={formData.phone}
+            value={formData.phone ?? ""}
             onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
             className="w-full border border-gray-300 rounded px-3 py-2 focus:outline-none focus:ring-2 focus:ring-black"
           />
@@ -399,7 +434,7 @@ const OrderIntakeForm: React.FC<Props> = ({ onSaved = () => {} }) => {
           <label className="text-sm font-medium text-gray-700 mb-1">Email Address</label>
           <input
             type="email"
-            value={formData.email}
+            value={formData.email ?? ""}
             onChange={(e) => setFormData({ ...formData, email: e.target.value })}
             className="w-full border border-gray-300 rounded px-3 py-2 focus:outline-none focus:ring-2 focus:ring-black"
           />
@@ -409,7 +444,7 @@ const OrderIntakeForm: React.FC<Props> = ({ onSaved = () => {} }) => {
         <div className="flex flex-col md:col-span-2">
           <label className="text-sm font-medium text-gray-700 mb-1">Address (with Zone)</label>
           <textarea
-            value={formData.address}
+            value={formData.address ?? ""}
             onChange={(e) => setFormData({ ...formData, address: e.target.value })}
             rows={2}
             className="w-full border border-gray-300 rounded px-3 py-2 focus:outline-none focus:ring-2 focus:ring-black resize-none"
@@ -421,7 +456,7 @@ const OrderIntakeForm: React.FC<Props> = ({ onSaved = () => {} }) => {
           <label className="text-sm font-medium text-gray-700 mb-1">Specifications</label>
           <input
             type="text"
-            value={formData.specifications}
+            value={formData.specifications ?? ""}
             onChange={(e) => setFormData({ ...formData, specifications: e.target.value })}
             className="w-full border border-gray-300 rounded px-3 py-2 focus:outline-none focus:ring-2 focus:ring-black"
           />
@@ -431,7 +466,7 @@ const OrderIntakeForm: React.FC<Props> = ({ onSaved = () => {} }) => {
         <div className="flex flex-col">
           <label className="text-sm font-medium text-gray-700 mb-1">Urgency</label>
           <select
-            value={formData.urgency}
+            value={formData.urgency ?? "Normal"}
             onChange={(e) => setFormData({ ...formData, urgency: e.target.value })}
             className="w-full border border-gray-300 rounded px-3 py-2 bg-white text-black focus:outline-none focus:ring-2 focus:ring-black"
           >
@@ -446,7 +481,7 @@ const OrderIntakeForm: React.FC<Props> = ({ onSaved = () => {} }) => {
         <div className="flex flex-col">
           <label className="text-sm font-medium text-gray-700 mb-1">Status</label>
           <select
-            value={formData.status}
+            value={formData.status ?? "New"}
             onChange={(e) => setFormData({ ...formData, status: e.target.value })}
             className="w-full border border-gray-300 rounded px-3 py-2 bg-white text-black focus:outline-none focus:ring-2 focus:ring-black"
           >
@@ -461,82 +496,48 @@ const OrderIntakeForm: React.FC<Props> = ({ onSaved = () => {} }) => {
           <label className="text-sm font-medium text-gray-700 mb-1">Order ID</label>
           <input
             type="text"
-            value={formData.orderId}
+            value={formData.orderId ?? ""}
             disabled
             className="w-full border border-gray-300 rounded px-3 py-2 bg-gray-100 text-gray-500 cursor-not-allowed"
           />
         </div>
       </div>
 
-      {/* Upload Requirements */}
       <div className="flex flex-col">
-        <label className="text-sm font-medium text-gray-700 mb-1">Upload Requirements</label>
-        <div className="flex items-center gap-3">
-          <label className="cursor-pointer inline-flex items-center px-4 py-2 bg-[#891F1A] text-white text-sm font-medium rounded hover:bg-red-700 transition duration-200 shadow">
-            📎 Choose Files
-            <input type="file" multiple onChange={handleFileChange} className="hidden" />
-          </label>
-          {intakeFiles.length > 0 && <span className="text-sm text-gray-600">{intakeFiles.length} file(s) selected</span>}
-        </div>
-
-        {intakeFiles.length > 0 && (
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-3">
-            {intakeFiles.map((file, index) => {
-              const ext = file.name.split(".").pop()?.toLowerCase();
-              const isImage = ["jpg", "jpeg", "png", "gif", "bmp", "webp"].includes(ext || "");
-              const isPdf = ext === "pdf";
-              const isDoc = ["doc", "docx"].includes(ext || "");
-              const icon = isImage ? "🖼️" : isPdf ? "📄" : isDoc ? "📝" : "📁";
-              return (
-                <div key={`${file.name}-${index}`} className="flex items-center justify-between border border-gray-300 rounded px-3 py-2 bg-white shadow-sm hover:shadow-md transition-all">
-                  <div className="flex items-center gap-2 overflow-hidden">
-                    <span className="text-xl">{icon}</span>
-                    <div className="flex flex-col overflow-hidden">
-                      <span className="text-sm truncate text-gray-800 font-medium">{file.name}</span>
-                      <span className="text-xs text-gray-500">{(file.size / 1024).toFixed(1)} KB</span>
-                    </div>
-                  </div>
-                  <button
-                    onClick={() => handleFileRemove(index)}
-                    className="ml-3 text-red-500 hover:text-red-700 text-sm font-bold transition duration-200"
-                    title="Remove"
-                  >
-                    ✕
-                  </button>
-                </div>
-              );
-            })}
-          </div>
-        )}
-      </div>
-
-      {/* Order Details */}
-      <div className="flex flex-col">
-        <h3 className="text-lg font-bold text-gray-900 mb-2">Order Details</h3>
-        <textarea
-          value={formData.orderDetails || ""}
-          onChange={(e) => setFormData({ ...formData, orderDetails: e.target.value })}
-          rows={5}
-          placeholder="Enter full order requirements, notes, or extra details..."
-          className="w-full border border-gray-300 rounded px-3 py-2 focus:outline-none focus:ring-2 focus:ring-black resize-y"
+        <label className="mb-1 font-medium">Product Type</label>
+        <input
+          type="text"
+          value={formData.productType || ""}
+          onChange={(e) => setFormData({ ...formData, productType: e.target.value })}
+          className="border rounded px-3 py-2"
         />
       </div>
 
-      {/* Save */}
-      <div className="flex justify-end">
-        <button
-          onClick={handleSave}
-          className={`bg-[#3B66FF] hover:bg-[#2c53d9] text-white font-medium px-6 py-2 rounded shadow transition duration-200 ${
-            !hasAtLeastOneProduct ? "opacity-60 cursor-not-allowed hover:bg-[#3B66FF]" : ""
-          }`}
-          disabled={!hasAtLeastOneProduct}
-          title={!hasAtLeastOneProduct ? "Add at least one product" : "Save"}
-        >
-          Save
-        </button>
+      <div className="flex flex-col">
+        <label className="mb-1 font-medium">Specifications</label>
+        <textarea
+          rows={4}
+          value={formData.specifications || ""}
+          onChange={(e) => setFormData({ ...formData, specifications: e.target.value })}
+          className="border rounded px-3 py-2 resize-none"
+        />
       </div>
-    </Card>
-  );
-};
 
-export default OrderIntakeForm;
+      <div className="flex flex-col">
+        <label className="mb-1 font-medium">Urgency</label>
+        <select
+          value={formData.urgency || ""}
+          onChange={(e) => setFormData({ ...formData, urgency: e.target.value })}
+          className="border rounded px-3 py-2"
+        >
+          <option value="">Select urgency</option>
+          <option value="Low">Low</option>
+          <option value="Normal">Normal</option>
+          <option value="High">High</option>
+          <option value="Urgent">Urgent</option>
+        </select>
+      </div>
+    </div>
+  );
+}
+

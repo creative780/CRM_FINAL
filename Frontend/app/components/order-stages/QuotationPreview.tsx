@@ -275,30 +275,27 @@ export default function QuotationPreview({ formData }: any) {
           <div className="border border-gray-400">
             <table className="w-full text-xs">
               <tbody>
-                <tr>
-                  <td className="px-3 py-1 border-b border-gray-300 font-medium">Subtotal</td>
-                  <td className="px-3 py-1 text-right border-b border-gray-300">{subtotal.toFixed(2)}</td>
-                </tr>
-                <tr>
-                  <td className="px-3 py-1 border-b border-gray-300 font-medium">Discount</td>
-                  <td className="px-3 py-1 text-right border-b border-gray-300">{discount.toFixed(2)}</td>
-                </tr>
-                <tr>
-                  <td className="px-3 py-1 border-b border-gray-300 font-medium">VAT 3%</td>
-                  <td className="px-3 py-1 text-right border-b border-gray-300">{vat.toFixed(2)}</td>
-                </tr>
-                <tr>
-                  <td className="px-3 py-1 border-b border-gray-300 font-medium">Advance Paid</td> {/* NEW */}
-                  <td className="px-3 py-1 text-right border-b border-gray-300">{advancePaid.toFixed(2)}</td>
-                </tr>
-                <tr className="bg-[#891F1A] text-white font-bold">
-                  <td className="px-3 py-1">Total</td>
-                  <td className="px-3 py-1 text-right">{total.toFixed(2)}</td>
-                </tr>
-                <tr className="font-semibold">
-                  <td className="px-3 py-1">Remaining</td> {/* NEW */}
-                  <td className="px-3 py-1 text-right">{remaining.toFixed(2)}</td>
-                </tr>
+                {[
+                  { label: "Subtotal", value: subtotal, border: true },
+                  { label: "Discount", value: discount, border: true },
+                  { label: "VAT 3%", value: vat, border: true },
+                  { label: "Advance Paid", value: advancePaid, border: true },
+                  { label: "Total", value: total, rowClass: "bg-[#891F1A] text-white font-bold" },
+                  { label: "Remaining", value: remaining, rowClass: "font-semibold" },
+                ].map(({ label, value, border = false, rowClass = "" }) => (
+                  <tr key={label} className={rowClass}>
+                    <td
+                      className={`px-3 py-1 font-medium${border ? " border-b border-gray-300" : ""}`}
+                    >
+                      {label}
+                    </td>
+                    <td
+                      className={`px-3 py-1 text-right${border ? " border-b border-gray-300" : ""}`}
+                    >
+                      {value.toFixed(2)}
+                    </td>
+                  </tr>
+                ))}
               </tbody>
             </table>
           </div>

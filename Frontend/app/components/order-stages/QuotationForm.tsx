@@ -7,7 +7,7 @@ import QuotationPreview from "./QuotationPreview";
 import { useReactToPrint } from "react-to-print";
 import { Dialog } from "@headlessui/react";
 
-export default function OrderIntakeForm({ formData, setFormData }: any) {
+export default function QuotationForm({ formData, setFormData }: any) {
   const [isPreviewOpen, setIsPreviewOpen] = useState(false);
   const previewRef = useRef(null);
 
@@ -67,6 +67,8 @@ export default function OrderIntakeForm({ formData, setFormData }: any) {
               { label: "Machine Usage Cost", key: "machineCost" },
               { label: "Design Complexity Cost", key: "designCost" },
               { label: "Delivery Cost", key: "deleiveryCost" },
+              { label: "Discount", key: "discount" },
+              { label: "Advance Paid", key: "advancePaid" },
             ].map(({ label, key }) => (
               <div className="flex flex-col" key={key}>
                 <label className="text-sm font-medium text-gray-700 mb-1">
