@@ -13,6 +13,7 @@ class OrderIntakeSerializer(serializers.Serializer):
     productType = serializers.CharField()
     specs = serializers.CharField(allow_blank=True, required=False)
     urgency = serializers.CharField(allow_blank=True, required=False)
+    status = serializers.CharField(allow_blank=True, required=False)
 
 
 REQUIRED_FIELDS = {

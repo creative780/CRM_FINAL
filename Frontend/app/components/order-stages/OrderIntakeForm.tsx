@@ -545,20 +545,6 @@ const OrderIntakeForm: React.FC<Props> = ({
           />
         </div>
       </div>
-
-      {/* Save Button */}
-      <div className="flex justify-end">
-        <button
-          onClick={handleSave}
-          className={`bg-[#3B66FF] hover:bg-[#2c53d9] text-white font-medium px-6 py-2 rounded shadow transition duration-200 ${
-            !hasProductDetails ? "opacity-60 cursor-not-allowed hover:bg-[#3B66FF]" : ""
-          }`}
-          disabled={!hasProductDetails}
-          title={!hasProductDetails ? "Add product details" : "Save"}
-        >
-          Save
-        </button>
-      </div>
     </div>
   );
 };

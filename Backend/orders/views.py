@@ -1,5 +1,7 @@
+import re
+from typing import Any, Mapping, Optional
+
 from django.utils.crypto import get_random_string
-from django.utils import timezone
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework import status
@@ -16,6 +18,97 @@ def generate_order_id() -> str:
     return get_random_string(10).upper()
 
 
+_COMPLETED_KEYWORDS = {"delivered", "completed", "complete", "fulfilled"}
+
+
+_STATUS_ALIASES = {
+    "new": "new",
+    "intake": "new",
+    "pending": "new",
+    "neworder": "new",
+    "neworders": "new",
+    "active": "in_progress",
+    "inprogress": "in_progress",
+    "inprogression": "in_progress",
+    "progress": "in_progress",
+    "working": "in_progress",
+    "processing": "in_progress",
+    "activeorder": "in_progress",
+    "activeorders": "in_progress",
+    "completed": "completed",
+    "complete": "completed",
+    "done": "completed",
+    "finished": "completed",
+    "fulfilled": "completed",
+    "completedorder": "completed",
+    "completedorders": "completed",
+    "delivered": "delivered",
+    "deliveredorder": "delivered",
+    "deliveredorders": "delivered",
+}
+
+
+def _normalize_status(raw: Optional[str]) -> Optional[str]:
+    """Map arbitrary status labels to one of the canonical Order statuses."""
+
+    if not raw or not isinstance(raw, str):
+        return None
+
+    normalized = raw.strip().lower()
+    if not normalized:
+        return None
+
+    candidates = {normalized}
+    # allow callers to send values like "Active Orders" or "in-progress"
+    candidates.add(normalized.replace("-", "").replace(" ", ""))
+    candidates.add(re.sub(r"[^a-z]", "", normalized))
+
+    for key in candidates:
+        if key in _STATUS_ALIASES:
+            return _STATUS_ALIASES[key]
+
+    return None
+
+
+def _derive_status_from_stage(
+    stage: str,
+    *,
+    payload: Optional[Mapping[str, Any]] = None,
+    delivery: Optional[OrderDelivery] = None,
+) -> Optional[str]:
+    """Return the desired order.status for a given stage transition."""
+
+    stage_status_map = {
+        "intake": "new",
+        "quotation": "in_progress",
+        "design": "in_progress",
+        "printing": "in_progress",
+        "approval": "in_progress",
+    }
+
+    if stage != "delivery":
+        return stage_status_map.get(stage)
+
+    delivered_at = None
+    delivery_status = None
+
+    if payload:
+        delivered_at = payload.get("delivered_at") or payload.get("deliveredAt")
+        delivery_status = payload.get("delivery_status") or payload.get("deliveryStatus")
+
+    if delivery:
+        delivered_at = delivered_at or getattr(delivery, "delivered_at", None)
+        delivery_status = delivery_status or getattr(delivery, "delivery_status", None)
+
+    if delivered_at:
+        return "completed"
+
+    if delivery_status and delivery_status.strip().lower() in _COMPLETED_KEYWORDS:
+        return "completed"
+
+    return "in_progress"
+
+
 class OrdersCreateView(APIView):
     permission_classes = [RolePermission]
     allowed_roles = ['admin', 'sales']
@@ -24,14 +117,18 @@ class OrdersCreateView(APIView):
         s = OrderIntakeSerializer(data=request.data)
         s.is_valid(raise_exception=True)
         data = s.validated_data
-        order = Order.objects.create(
-            order_id=generate_order_id(),
-            client_name=data['clientName'],
-            product_type=data['productType'],
-            specs=data.get('specs', ''),
-            urgency=data.get('urgency', ''),
-            created_by=request.user if request.user.is_authenticated else None,
-        )
+        status_value = _normalize_status(data.get('status'))
+        order_kwargs = {
+            'order_id': generate_order_id(),
+            'client_name': data['clientName'],
+            'product_type': data['productType'],
+            'specs': data.get('specs', ''),
+            'urgency': data.get('urgency', ''),
+            'created_by': request.user if request.user.is_authenticated else None,
+        }
+        if status_value:
+            order_kwargs['status'] = status_value
+        order = Order.objects.create(**order_kwargs)
         return Response(OrderSerializer(order).data, status=status.HTTP_201_CREATED)
 
 
@@ -61,38 +158,51 @@ class OrderStagePatchView(APIView):
         if not any(r in user_roles for r in stage_to_roles.get(stage, [])) and not getattr(request.user, 'is_superuser', False):
             return Response({'detail': 'Forbidden'}, status=status.HTTP_403_FORBIDDEN)
         with transaction.atomic():
+            new_status = None
             if stage == 'quotation':
                 obj, _ = OrderQuotation.objects.get_or_create(order=order)
                 for f in ['labour_cost', 'finishing_cost', 'paper_cost', 'design_cost']:
                     if f in payload:
                         setattr(obj, f, payload[f])
                 obj.save()
+                new_status = _derive_status_from_stage(stage)
             elif stage == 'design':
                 obj, _ = OrderDesign.objects.get_or_create(order=order)
                 for f in ['assigned_designer', 'requirements_files', 'design_status']:
                     if f in payload:
                         setattr(obj, f, payload[f])
                 obj.save()
+                new_status = _derive_status_from_stage(stage)
             elif stage == 'printing':
                 obj, _ = OrderPrint.objects.get_or_create(order=order)
                 for f in ['print_operator', 'print_time', 'batch_info', 'print_status', 'qa_checklist']:
                     if f in payload:
                         setattr(obj, f, payload[f])
                 obj.save()
+                new_status = _derive_status_from_stage(stage)
             elif stage == 'approval':
                 obj, _ = OrderApproval.objects.get_or_create(order=order)
                 for f in ['client_approval_files', 'approved_at']:
                     if f in payload:
                         setattr(obj, f, payload[f])
                 obj.save()
+                new_status = _derive_status_from_stage(stage)
             elif stage == 'delivery':
                 obj, _ = OrderDelivery.objects.get_or_create(order=order)
                 for f in ['delivery_code', 'delivery_status', 'delivered_at', 'rider_photo_path']:
                     if f in payload:
                         setattr(obj, f, payload[f])
                 obj.save()
+                new_status = _derive_status_from_stage(stage, payload=payload, delivery=obj)
+            else:
+                new_status = _derive_status_from_stage(stage)
+
             order.stage = stage
-            order.save(update_fields=['stage'])
+            update_fields = ['stage']
+            if new_status and new_status != order.status:
+                order.status = new_status
+                update_fields.append('status')
+            order.save(update_fields=update_fields)
         return Response({'ok': True})
 
 
@@ -305,6 +415,10 @@ class OrderDeliveryView(APIView):
                 if field in request.data:
                     setattr(delivery, field, request.data[field])
             delivery.save()
+            new_status = _derive_status_from_stage(order.stage, payload=request.data, delivery=delivery)
+            if new_status and new_status != order.status:
+                order.status = new_status
+                order.save(update_fields=['status'])
             return Response({'ok': True})
         except Order.DoesNotExist:
             return Response({'detail': 'Order not found'}, status=404)
