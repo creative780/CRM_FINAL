@@ -25,6 +25,11 @@ export type DesignerUploadedItem = {
   url?: string;
 };
 
+/**
+ * Shared form data used across various order stages.  Added `productType`,
+ * `specifications`, `sendTo`, `urgency` and `status` as optional fields to
+ * support Sales UI fields without causing type errors.
+ */
 export type SharedFormData = {
   orderId?: string;
   projectDescription?: string;
@@ -40,6 +45,13 @@ export type SharedFormData = {
 
   /** Canonical per-order manifest for Production/Designer handoff. */
   designerUploads?: Record<string, DesignerUploadedItem[]>;
+
+  /** Additional Sales/Quotation fields */
+  productType?: string;
+  specifications?: string;
+  sendTo?: "Sales" | "Designer" | "Production";
+  urgency?: string;
+  status?: string;
 
   // --- Explicit sales cost fields (Sales UI) ---
   labourCost?: number;
@@ -62,6 +74,9 @@ export type SharedFormData = {
   vat?: number;
   advancePayment?: number;  // alias target for advancePaid
   finalTotal?: number;      // alias target for finalPrice
+
+  /** Allow additional dynamic fields on formData */
+  [key: string]: any;
 };
 
 type State = {

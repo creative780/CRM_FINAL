@@ -61,6 +61,13 @@ const statusMap: Record<string, Status> = {
   delivered: "Completed",
 };
 
+// Map UI‑friendly status values back to API slugs.
+const apiStatusMap: Record<Status, string> = {
+  New: "new",
+  Active: "in_progress",
+  Completed: "completed",
+};
+
 const orderToRow = (order: Order): Row => {
   const [datePart = "", timePart = ""] = (order.created_at || "").split("T");
   const time = timePart ? timePart.split(".")[0]?.substring(0, 5) ?? "" : "";
@@ -166,6 +173,8 @@ export default function OrdersTablePage() {
     const rawSpecs = data?.specifications;
     const specs = typeof rawSpecs === "string" && rawSpecs.trim().length > 0 ? rawSpecs.trim() : orderDetails;
     const urgency = data?.urgency ?? "Normal";
+    // derive the API-compatible status; default to “new” if none specified
+    const apiStatus = apiStatusMap[(data?.status ?? "New") as Status] ?? "new";
 
     if (!clientName) {
       toast.error("Please enter a client name");
@@ -179,12 +188,14 @@ export default function OrdersTablePage() {
     try {
       setLoading(true);
       setError(null);
+      // Cast the payload to any to include `status` even though OrderCreatePayload doesn't define it
       await ordersApi.createOrder({
         clientName,
         productType,
         specs,
         urgency,
-      });
+        status: apiStatus,
+      } as any);
 
       // Refresh orders list
       const apiOrders = await ordersApi.getOrders();
@@ -299,10 +310,10 @@ export default function OrdersTablePage() {
   );
 
   return (
-    <div className="min-h-screen bg-gray-100 p-4 sm:p-6 md:p-8 lg:p-10 xl:p-12 text-black">
+    <div className="min-h-screen bg-gray-100 p-4 sm:p-6 md:p-8 lg-p-10 xl-p-12 text-black">
       {/* Navbar */}
       <DashboardNavbar />
-      <div className="h-4 sm:h-5 md:h-6" />
+      <div className="h-4 sm:h-5 md-h-6" />
 
       <div className="max-w-7xl mx-auto pb-16">
         <div className="flex items-center justify-between mt-2">
