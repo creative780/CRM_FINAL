@@ -26,6 +26,21 @@ from .serializers import (
 )
 from .utils import build_attendance_metadata
 
+
+def _format_location(metadata: dict[str, object]) -> str:
+    """Create a user-friendly location string from metadata."""
+
+    location = (metadata.get('location_address') or '').strip()
+    if location:
+        return location
+
+    lat = metadata.get('location_lat')
+    lng = metadata.get('location_lng')
+    if lat in (None, '') or lng in (None, ''):
+        return ''
+
+    return f"{lat}, {lng}"
+
 User = get_user_model()
 
 ALL_ROLES = ['admin', 'sales', 'designer', 'production', 'delivery', 'finance']
@@ -151,6 +166,38 @@ class AttendanceCheckOutView(APIView):
         attendance.save()
 
         return Response(AttendanceSerializer(attendance).data)
+
+
+class AttendanceContextView(APIView):
+    """Return contextual metadata for the authenticated user's device."""
+
+    permission_classes = [IsAuthenticated, RolePermission]
+    allowed_roles = ALL_ROLES
+
+    @extend_schema(
+        operation_id='attendance_context',
+        summary='Get device context for attendance',
+        description='Returns the requesting user\'s IP, location and device identifiers',
+        responses={200: None},
+        tags=['Attendance'],
+    )
+    def get(self, request):
+        metadata = build_attendance_metadata(request)
+
+        ip_address = (metadata.get('ip_address') or '').strip()
+        device_id = (metadata.get('device_id') or '').strip()
+        device_name = (metadata.get('device_info') or '').strip()
+
+        location = _format_location(metadata)
+
+        return Response(
+            {
+                'ip': ip_address,
+                'location': location,
+                'deviceId': device_id,
+                'deviceName': device_name or device_id,
+            }
+        )
 
 
 class AttendanceListView(APIView):
@@ -409,6 +456,7 @@ class AttendancePayrollView(APIView):
 
 check_in = AttendanceCheckInView.as_view()
 check_out = AttendanceCheckOutView.as_view()
+attendance_context = AttendanceContextView.as_view()
 attendance_list = AttendanceListView.as_view()
 attendance_me = MyAttendanceView.as_view()
 attendance_summary = AttendanceSummaryView.as_view()

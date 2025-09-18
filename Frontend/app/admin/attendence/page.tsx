@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useCallback } from "react";
 import { useUser } from "@/contexts/user-context";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -24,6 +24,7 @@ import {
   Clock,
   MapPin,
   Wifi,
+  Monitor,
   Calendar as CalendarIcon,
   Download,
   CheckCircle,
@@ -32,9 +33,10 @@ import {
   Settings,
   FileText,
 } from "lucide-react";
-import { format } from "date-fns";
+import { format, parseISO } from "date-fns";
 import ScrollAreaWithRail from "@/app/components/ScrollAreaWithRail";
 import DashboardNavbar from "@/app/components/navbar/DashboardNavbar";
+import { api } from "@/lib/api";
 
 /** ------------------ Types ------------------ */
 interface AttendanceRecord {
@@ -44,7 +46,7 @@ interface AttendanceRecord {
   checkIn: string; // HH:mm
   checkOut: string | null; // HH:mm or null
   duration: string; // "8h 30m" | "In Progress"
-  location: { lat: number; lng: number; address: string };
+  location: { lat: number | null; lng: number | null; address: string };
   ipAddress: string;
   device: string;
   status: "present" | "late" | "absent";
@@ -68,166 +70,120 @@ interface AttendanceRules {
   weekendDays: number[]; // 0=Sun ... 6=Sat
 }
 
-/** ------------------ Seeds ------------------ */
-const mockAttendanceRecords: AttendanceRecord[] = [
-  {
-    id: "1",
-    employeeName: "Alice Johnson",
-    date: "2024-01-22",
-    checkIn: "09:00",
-    checkOut: "17:30",
-    duration: "8h 30m",
-    location: { lat: 25.2048, lng: 55.2708, address: "Dubai Marina, Dubai, UAE" },
-    ipAddress: "192.168.1.100",
-    device: "Windows Desktop",
-    status: "present",
-  },
-  {
-    id: "2",
-    employeeName: "Bob Smith",
-    date: "2024-01-22",
-    checkIn: "09:15",
-    checkOut: "17:45",
-    duration: "8h 30m",
-    location: { lat: 25.2048, lng: 55.2708, address: "Dubai Marina, Dubai, UAE" },
-    ipAddress: "192.168.1.101",
-    device: "MacBook Pro",
-    status: "late",
-  },
-  {
-    id: "3",
-    employeeName: "Carol Davis",
-    date: "2024-01-22",
-    checkIn: "08:45",
-    checkOut: null,
-    duration: "In Progress",
-    location: { lat: 25.2048, lng: 55.2708, address: "Dubai Marina, Dubai, UAE" },
-    ipAddress: "192.168.1.102",
-    device: "iPhone 15",
-    status: "present",
-  },
-  {
-    id: "4",
-    employeeName: "David Lee",
-    date: "2024-01-22",
-    checkIn: "09:05",
-    checkOut: "17:15",
-    duration: "8h 10m",
-    location: { lat: 25.276987, lng: 55.296249, address: "Business Bay, Dubai, UAE" },
-    ipAddress: "192.168.1.104",
-    device: "Dell Laptop",
-    status: "late",
-  },
-  {
-    id: "5",
-    employeeName: "Eva Green",
-    date: "2024-01-22",
-    checkIn: "08:55",
-    checkOut: "17:25",
-    duration: "8h 30m",
-    location: { lat: 25.197197, lng: 55.274376, address: "Jumeirah Lakes Towers, Dubai, UAE" },
-    ipAddress: "192.168.1.105",
-    device: "iMac",
-    status: "present",
-  },
-  {
-    id: "6",
-    employeeName: "Frank Thomas",
-    date: "2024-01-22",
-    checkIn: "09:20",
-    checkOut: "17:50",
-    duration: "8h 30m",
-    location: { lat: 25.094735, lng: 55.161278, address: "Palm Jumeirah, Dubai, UAE" },
-    ipAddress: "192.168.1.106",
-    device: "Android Tablet",
-    status: "late",
-  },
-  {
-    id: "7",
-    employeeName: "Grace Kim",
-    date: "2024-01-22",
-    checkIn: "08:50",
-    checkOut: "17:10",
-    duration: "8h 20m",
-    location: { lat: 25.1011, lng: 55.1602, address: "JBR, Dubai, UAE" },
-    ipAddress: "192.168.1.107",
-    device: "Surface Pro",
-    status: "present",
-  },
-  {
-    id: "8",
-    employeeName: "Henry Clark",
-    date: "2024-01-22",
-    checkIn: "09:35",
-    checkOut: null,
-    duration: "In Progress",
-    location: { lat: 25.276987, lng: 55.296249, address: "Business Bay, Dubai, UAE" },
-    ipAddress: "192.168.1.108",
-    device: "Windows Laptop",
-    status: "late",
-  },
-  {
-    id: "9",
-    employeeName: "Isla Morgan",
-    date: "2024-01-22",
-    checkIn: "09:00",
-    checkOut: "17:30",
-    duration: "8h 30m",
-    location: { lat: 25.2048, lng: 55.2708, address: "Dubai Marina, Dubai, UAE" },
-    ipAddress: "192.168.1.109",
-    device: "MacBook Air",
-    status: "present",
-  },
-  {
-    id: "10",
-    employeeName: "Jack Wilson",
-    date: "2024-01-22",
-    checkIn: "08:40",
-    checkOut: "17:20",
-    duration: "8h 40m",
-    location: { lat: 25.276987, lng: 55.296249, address: "Business Bay, Dubai, UAE" },
-    ipAddress: "192.168.1.110",
-    device: "Lenovo ThinkPad",
-    status: "present",
-  },
-  {
-    id: "11",
-    employeeName: "Kylie Adams",
-    date: "2024-01-22",
-    checkIn: "09:10",
-    checkOut: "17:40",
-    duration: "8h 30m",
-    location: { lat: 25.197197, lng: 55.274376, address: "JLT, Dubai, UAE" },
-    ipAddress: "192.168.1.111",
-    device: "iPhone 14",
-    status: "late",
-  },
-  {
-    id: "12",
-    employeeName: "Liam Brown",
-    date: "2024-01-22",
-    checkIn: "09:00",
-    checkOut: null,
-    duration: "In Progress",
-    location: { lat: 25.276987, lng: 55.296249, address: "Downtown Dubai, UAE" },
-    ipAddress: "192.168.1.112",
-    device: "iPad Pro",
-    status: "present",
-  },
-  {
-    id: "13",
-    employeeName: "Maya Patel",
-    date: "2024-01-22",
-    checkIn: "09:30",
-    checkOut: null,
-    duration: "In Progress",
-    location: { lat: 25.276987, lng: 55.296249, address: "Business Bay, Dubai, UAE" },
-    ipAddress: "192.168.1.113",
-    device: "Samsung Galaxy Tab",
-    status: "late",
-  },
-];
+/** ------------------ API Types & Helpers ------------------ */
+interface AttendanceApiResponse {
+  id: number | string;
+  employee_name: string;
+  date: string;
+  check_in: string | null;
+  check_out: string | null;
+  duration_display?: string | null;
+  location_lat?: number | string | null;
+  location_lng?: number | string | null;
+  location_address?: string | null;
+  ip_address?: string | null;
+  device_id?: string | null;
+  device_info?: string | null;
+  status: string;
+}
 
+const UNKNOWN_LOCATION = "Unknown location";
+const UNKNOWN_IP = "Unknown IP";
+const UNKNOWN_DEVICE = "Unknown device";
+const DEVICE_ID_STORAGE_KEY = "attendance_device_id";
+
+function toNumber(value: number | string | null | undefined): number | null {
+  if (value === null || value === undefined || value === "") return null;
+  const numeric = typeof value === "number" ? value : Number.parseFloat(value);
+  return Number.isFinite(numeric) ? numeric : null;
+}
+
+function formatTimeFromIso(iso: string | null | undefined): string | null {
+  if (!iso) return null;
+  try {
+    return format(parseISO(iso), "HH:mm");
+  } catch {
+    const parsed = new Date(iso);
+    if (Number.isNaN(parsed.getTime())) return null;
+    return format(parsed, "HH:mm");
+  }
+}
+
+function computeDurationFromIso(
+  checkIn: string | null | undefined,
+  checkOut: string | null | undefined
+): string {
+  if (!checkIn || !checkOut) return "In Progress";
+  try {
+    const start = parseISO(checkIn);
+    const end = parseISO(checkOut);
+    const diffMs = Math.max(0, end.getTime() - start.getTime());
+    const hours = Math.floor(diffMs / (1000 * 60 * 60));
+    const minutes = Math.floor((diffMs % (1000 * 60 * 60)) / (1000 * 60));
+    return `${hours}h ${minutes}m`;
+  } catch {
+    return "In Progress";
+  }
+}
+
+function mapAttendanceApiRecord(record: AttendanceApiResponse): AttendanceRecord {
+  const lat = toNumber(record.location_lat);
+  const lng = toNumber(record.location_lng);
+  const address = (record.location_address || "").trim();
+  const locationAddress =
+    address || (lat !== null && lng !== null ? `${lat}, ${lng}` : "");
+
+  const checkIn = formatTimeFromIso(record.check_in) || "--";
+  const checkOut = formatTimeFromIso(record.check_out);
+  const duration =
+    (record.duration_display || "").trim() ||
+    (checkOut ? computeDurationFromIso(record.check_in, record.check_out) : "In Progress");
+
+  const ip = (record.ip_address || "").trim();
+  const device = (record.device_info || record.device_id || "").trim();
+
+  const status = record.status === "late" || record.status === "absent" ? record.status : "present";
+
+  return {
+    id: String(record.id),
+    employeeName: record.employee_name || "",
+    date: record.date,
+    checkIn,
+    checkOut: checkOut || null,
+    duration,
+    location: {
+      lat,
+      lng,
+      address: locationAddress || UNKNOWN_LOCATION,
+    },
+    ipAddress: ip || UNKNOWN_IP,
+    device: device || UNKNOWN_DEVICE,
+    status,
+  };
+}
+
+function upsertAttendanceRecord(
+  records: AttendanceRecord[],
+  nextRecord: AttendanceRecord
+): AttendanceRecord[] {
+  const index = records.findIndex((record) => record.id === nextRecord.id);
+  if (index === -1) {
+    return [nextRecord, ...records];
+  }
+  const updated = [...records];
+  updated[index] = nextRecord;
+  return updated;
+}
+
+function sortAttendanceRecords(records: AttendanceRecord[]): AttendanceRecord[] {
+  return [...records].sort((a, b) => {
+    const dateCompare = b.date.localeCompare(a.date);
+    if (dateCompare !== 0) return dateCompare;
+    return (b.checkIn || "").localeCompare(a.checkIn || "");
+  });
+}
+
+/** ------------------ Seeds ------------------ */
 const seedEmployees: Employee[] = [
   { id: "e1", name: "Alice Johnson", baseSalary: 6000 },
   { id: "e2", name: "Bob Smith", baseSalary: 6500 },
@@ -258,7 +214,6 @@ const defaultRules: AttendanceRules = {
 
 /** ------------------ Helpers ------------------ */
 const LS_KEYS = {
-  records: "attendanceRecords",
   rules: "attendanceRules",
   employees: "attendanceEmployees",
 };
@@ -322,13 +277,20 @@ export default function Attendance() {
   const [isCheckedIn, setIsCheckedIn] = useState(false);
   const [currentLocation, setCurrentLocation] = useState<string>("Detecting location...");
   const [currentIP, setCurrentIP] = useState<string>("Detecting IP...");
+  const [currentDevice, setCurrentDevice] = useState<string>("Detecting device...");
+  // lat/lng for payload
+  const [currentLat, setCurrentLat] = useState<number | null>(null);
+  const [currentLng, setCurrentLng] = useState<number | null>(null);
   const [attendanceRecords, setAttendanceRecords] = useState<AttendanceRecord[]>([]);
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [rules, setRules] = useState<AttendanceRules>(defaultRules);
+  const [statusMessage, setStatusMessage] = useState<string | null>(null);
 
   const [searchTerm, setSearchTerm] = useState("");
   const [selectedDate, setSelectedDate] = useState<Date>();
   const [checkInTime, setCheckInTime] = useState<string | null>(null);
+  const [deviceId, setDeviceId] = useState<string | null>(null);
+  const [isActionLoading, setIsActionLoading] = useState(false);
 
   // Payroll UI
   const [payrollMonth, setPayrollMonth] = useState<string>(() => {
@@ -336,33 +298,85 @@ export default function Attendance() {
     return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
   });
 
-  /** Load from localStorage (seed on first run) */
+  // Create or restore unique device ID
   useEffect(() => {
+    if (typeof window === "undefined") return;
     try {
-      const recStr = localStorage.getItem(LS_KEYS.records);
+      let stored = localStorage.getItem(DEVICE_ID_STORAGE_KEY);
+      if (!stored) {
+        const cryptoObj = window.crypto as Crypto & { randomUUID?: () => string };
+        const generated =
+          typeof cryptoObj?.randomUUID === "function"
+            ? cryptoObj.randomUUID()
+            : `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+        stored = generated;
+        localStorage.setItem(DEVICE_ID_STORAGE_KEY, stored);
+      }
+      setDeviceId(stored);
+    } catch {
+      setDeviceId(null);
+    }
+  }, []);
+
+  // Detect IP, location and device info on mount
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    let cancelled = false;
+
+    const fetchMeta = async () => {
+      try {
+        const ua = navigator.userAgent || "";
+        if (!cancelled) setCurrentDevice(ua || UNKNOWN_DEVICE);
+
+        const ipRes = await fetch("https://api.ipify.org?format=json");
+        const ipData = await ipRes.json();
+        const ip = ipData.ip as string;
+        if (!cancelled) setCurrentIP(ip || UNKNOWN_IP);
+
+        const locRes = await fetch(`https://ipapi.co/${ip}/json/`);
+        const locData = await locRes.json();
+        if (!cancelled) {
+          const lat = Number(locData.latitude);
+          const lng = Number(locData.longitude);
+          setCurrentLat(Number.isFinite(lat) ? lat : null);
+          setCurrentLng(Number.isFinite(lng) ? lng : null);
+          const parts: string[] = [];
+          if (locData.city) parts.push(locData.city);
+          if (locData.region) parts.push(locData.region);
+          if (locData.country_name) parts.push(locData.country_name);
+          const addr = parts.join(", ");
+          setCurrentLocation(addr || UNKNOWN_LOCATION);
+        }
+      } catch {
+        if (!cancelled) {
+          setCurrentLocation(UNKNOWN_LOCATION);
+          setCurrentIP(UNKNOWN_IP);
+        }
+      }
+    };
+
+    fetchMeta();
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  /** Load employees & rules from localStorage (seed on first run) */
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    try {
       const empStr = localStorage.getItem(LS_KEYS.employees);
       const ruleStr = localStorage.getItem(LS_KEYS.rules);
-
-      const initialRecs = recStr ? (JSON.parse(recStr) as AttendanceRecord[]) : mockAttendanceRecords;
       const initialEmps = empStr ? (JSON.parse(empStr) as Employee[]) : seedEmployees;
       const initialRules = ruleStr ? (JSON.parse(ruleStr) as AttendanceRules) : defaultRules;
-
-      setAttendanceRecords(initialRecs);
       setEmployees(initialEmps);
       setRules(initialRules);
     } catch {
-      setAttendanceRecords(mockAttendanceRecords);
       setEmployees(seedEmployees);
       setRules(defaultRules);
     }
   }, []);
-
-  /** Persist */
-  useEffect(() => {
-    try {
-      localStorage.setItem(LS_KEYS.records, JSON.stringify(attendanceRecords));
-    } catch {}
-  }, [attendanceRecords]);
 
   useEffect(() => {
     try {
@@ -376,13 +390,124 @@ export default function Attendance() {
     } catch {}
   }, [rules]);
 
-  // Simulated geo/IP & restore today's check-in
-  useEffect(() => {
-    const t = setTimeout(() => {
-      setCurrentLocation("Dubai Marina, Dubai, UAE");
-      setCurrentIP("192.168.1.103");
-    }, 800);
+  const applyAttendanceRecord = useCallback(
+    (apiRecord: AttendanceApiResponse) => {
+      const mapped = mapAttendanceApiRecord(apiRecord);
+      setAttendanceRecords((prev) => sortAttendanceRecords(upsertAttendanceRecord(prev, mapped)));
+      setCurrentLocation(mapped.location.address || UNKNOWN_LOCATION);
+      setCurrentIP(mapped.ipAddress || UNKNOWN_IP);
+      setCurrentDevice(mapped.device || UNKNOWN_DEVICE);
+      setStatusMessage(null);
+      if (!mapped.checkOut) {
+        setIsCheckedIn(true);
+        setCheckInTime(mapped.checkIn);
+      } else {
+        setIsCheckedIn(false);
+        setCheckInTime(null);
+      }
+      return mapped;
+    },
+    []
+  );
 
+  const loadCurrentAttendance = useCallback(async (): Promise<AttendanceRecord[]> => {
+    try {
+      const response = await api.get<AttendanceApiResponse[]>("/api/attendance/me/");
+      const mapped = sortAttendanceRecords(response.map(mapAttendanceApiRecord));
+      const latest = mapped[0];
+
+      if (latest) {
+        setCurrentLocation(latest.location.address || UNKNOWN_LOCATION);
+        setCurrentIP(latest.ipAddress || UNKNOWN_IP);
+        setCurrentDevice(latest.device || UNKNOWN_DEVICE);
+      } else {
+        setCurrentLocation(UNKNOWN_LOCATION);
+        setCurrentIP(UNKNOWN_IP);
+        setCurrentDevice(UNKNOWN_DEVICE);
+      }
+
+      const today = format(new Date(), "yyyy-MM-dd");
+      const openRecord = mapped.find(
+        (record) => record.date === today && !record.checkOut && record.employeeName === user.name
+      );
+      if (openRecord) {
+        setIsCheckedIn(true);
+        setCheckInTime(openRecord.checkIn);
+      } else {
+        setIsCheckedIn(false);
+        setCheckInTime(null);
+      }
+
+      setStatusMessage(null);
+      return mapped;
+    } catch (error) {
+      setCurrentLocation(UNKNOWN_LOCATION);
+      setCurrentIP(UNKNOWN_IP);
+      setCurrentDevice(UNKNOWN_DEVICE);
+      setIsCheckedIn(false);
+      setCheckInTime(null);
+      setStatusMessage(
+        error instanceof Error ? error.message : "Unable to load your attendance data. Please try again later."
+      );
+      return [];
+    }
+  }, [user.name]);
+
+  const loadAdminAttendance = useCallback(async (): Promise<AttendanceRecord[]> => {
+    const response = await api.get<AttendanceApiResponse[]>("/api/attendance/");
+    return sortAttendanceRecords(response.map(mapAttendanceApiRecord));
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const bootstrap = async () => {
+      if (!cancelled) {
+        setStatusMessage(null);
+      }
+      try {
+        const mine = await loadCurrentAttendance();
+        if (!cancelled && !isAdminRole) {
+          setAttendanceRecords(mine);
+        }
+      } catch (error) {
+        if (!cancelled && !isAdminRole) {
+          setAttendanceRecords([]);
+          setStatusMessage(
+            error instanceof Error ? error.message : "Failed to load your attendance data. Please try again later."
+          );
+        }
+        console.error("Failed to load current attendance", error);
+      }
+
+      if (!isAdminRole) return;
+
+      try {
+        const all = await loadAdminAttendance();
+        if (!cancelled) {
+          setAttendanceRecords(all);
+          setStatusMessage(null);
+        }
+      } catch (error) {
+        if (!cancelled) {
+          setAttendanceRecords([]);
+          setStatusMessage(
+            error instanceof Error ? error.message : "Failed to load attendance records. Please try again later."
+          );
+        }
+        console.error("Failed to load attendance records", error);
+      }
+    };
+
+   bootstrap();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [isAdminRole, loadAdminAttendance, loadCurrentAttendance]);
+
+  // Restore today's check-in if the user already has an open record
+  useEffect(() => {
     const today = format(new Date(), "yyyy-MM-dd");
     const todayRecord = attendanceRecords.find(
       (r) => r.employeeName === user.name && r.date === today && !r.checkOut
@@ -390,8 +515,10 @@ export default function Attendance() {
     if (todayRecord) {
       setIsCheckedIn(true);
       setCheckInTime(todayRecord.checkIn);
+    } else {
+      setIsCheckedIn(false);
+      setCheckInTime(null);
     }
-    return () => clearTimeout(t);
   }, [user.name, attendanceRecords]);
 
   /** Derived: filtered records */
@@ -404,59 +531,83 @@ export default function Attendance() {
   }, [attendanceRecords, searchTerm, selectedDate]);
 
   /** Attendance Actions */
-  const handleCheckIn = () => {
-    const now = new Date();
-    const timeString = format(now, "HH:mm");
-    const dateString = format(now, "yyyy-MM-dd");
 
-    const startPlusGrace = timeToMinutes(rules.workStart) + rules.graceMinutes;
-    const currentMins = timeToMinutes(timeString);
-    const status: AttendanceRecord["status"] = currentMins > startPlusGrace ? "late" : "present";
-
-    const newRecord: AttendanceRecord = {
-      id: Date.now().toString(),
-      employeeName: user.name,
-      date: dateString,
-      checkIn: timeString,
-      checkOut: null,
-      duration: "In Progress",
-      location: { lat: 25.2048, lng: 55.2708, address: currentLocation },
-      ipAddress: currentIP,
-      device: "Web Browser",
-      status,
-    };
-
-    setAttendanceRecords((prev) => [newRecord, ...prev]);
-    setIsCheckedIn(true);
-    setCheckInTime(timeString);
+  // Check in with metadata payload
+  const handleCheckIn = async () => {
+    setIsActionLoading(true);
+    setStatusMessage(null);
+    try {
+      const headers = deviceId ? { "X-Device-Id": deviceId } : undefined;
+      const payload = {
+        ip_address: currentIP === "Detecting IP..." ? null : currentIP,
+        device_id: deviceId,
+        device_info: currentDevice === "Detecting device..." ? null : currentDevice,
+        location_lat: currentLat,
+        location_lng: currentLng,
+        location_address: currentLocation === "Detecting location..." ? null : currentLocation,
+      };
+      const record = await api.post<AttendanceApiResponse>("/api/attendance/check-in/", payload, {
+        headers,
+      });
+      applyAttendanceRecord(record);
+      if (isAdminRole) {
+        try {
+          const refreshed = await loadAdminAttendance();
+          setAttendanceRecords(refreshed);
+        } catch (error) {
+          console.error("Failed to refresh attendance list after check-in", error);
+        }
+      }
+    } catch (error) {
+      setStatusMessage(
+        error instanceof Error ? error.message : "Failed to check in. Please try again later."
+      );
+      console.error("Failed to check in", error);
+    } finally {
+      setIsActionLoading(false);
+    }
   };
 
-  const handleCheckOut = () => {
-    const now = new Date();
-    const timeString = format(now, "HH:mm");
-    const dateString = format(now, "yyyy-MM-dd");
-
-    setAttendanceRecords((prev) =>
-      prev.map((record) => {
-        if (record.employeeName === user.name && record.date === dateString && !record.checkOut) {
-          const inDt = new Date(`${dateString}T${record.checkIn}:00`);
-          const outDt = new Date(`${dateString}T${timeString}:00`);
-          const diffMs = outDt.getTime() - inDt.getTime();
-          const hours = Math.floor(diffMs / (1000 * 60 * 60));
-          const minutes = Math.floor((diffMs % (1000 * 60 * 60)) / (1000 * 60));
-          return { ...record, checkOut: timeString, duration: `${hours}h ${minutes}m` };
+  // Check out with metadata payload
+  const handleCheckOut = async () => {
+    setIsActionLoading(true);
+    setStatusMessage(null);
+    try {
+      const headers = deviceId ? { "X-Device-Id": deviceId } : undefined;
+      const payload = {
+        ip_address: currentIP === "Detecting IP..." ? null : currentIP,
+        device_id: deviceId,
+        device_info: currentDevice === "Detecting device..." ? null : currentDevice,
+        location_lat: currentLat,
+        location_lng: currentLng,
+        location_address: currentLocation === "Detecting location..." ? null : currentLocation,
+      };
+      const record = await api.post<AttendanceApiResponse>("/api/attendance/check-out/", payload, {
+        headers,
+      });
+      applyAttendanceRecord(record);
+      if (isAdminRole) {
+        try {
+          const refreshed = await loadAdminAttendance();
+          setAttendanceRecords(refreshed);
+        } catch (error) {
+          console.error("Failed to refresh attendance list after check-out", error);
         }
-        return record;
-      })
-    );
-
-    setIsCheckedIn(false);
-    setCheckInTime(null);
+      }
+    } catch (error) {
+      setStatusMessage(
+        error instanceof Error ? error.message : "Failed to check out. Please try again later."
+      );
+      console.error("Failed to check out", error);
+    } finally {
+      setIsActionLoading(false);
+    }
   };
 
   /** Export CSV (admin only) */
   const exportToCSV = () => {
     const headers = [
+      "Device",
       "Employee",
       "Date",
       "Check In",
@@ -464,16 +615,18 @@ export default function Attendance() {
       "Duration",
       "Location",
       "IP Address",
-      "Device",
       "Status",
     ];
 
     const escapeCSV = (value: string) => `"${(value ?? "").toString().replace(/"/g, '""')}"`;
 
-    const recordsToExport = filteredRecords.filter((r) => isAdminRole || r.employeeName === user.name);
+    const recordsToExport = filteredRecords.filter(
+      (r) => isAdminRole || r.employeeName === user.name
+    );
 
     const rows = recordsToExport.map((record) =>
       [
+        escapeCSV(record.device),
         escapeCSV(record.employeeName),
         escapeCSV(new Date(record.date).toLocaleDateString("en-GB")),
         escapeCSV(record.checkIn),
@@ -481,7 +634,6 @@ export default function Attendance() {
         escapeCSV(record.duration),
         escapeCSV(record.location.address),
         escapeCSV(record.ipAddress),
-        escapeCSV(record.device),
         escapeCSV(record.status),
       ].join(",")
     );
@@ -647,7 +799,9 @@ export default function Attendance() {
     win.document.write(payslipHtml);
     win.document.close();
     setTimeout(() => {
-      try { win.print(); } catch {}
+      try {
+        win.print();
+      } catch {}
     }, 400);
   };
 
@@ -672,7 +826,7 @@ export default function Attendance() {
               Time Tracking
             </CardTitle>
           </CardHeader>
-        <CardContent className="space-y-4">
+          <CardContent className="space-y-4">
             <div className="text-center py-6">
               <div className="text-4xl font-bold mb-2">{format(new Date(), "HH:mm:ss")}</div>
               <div className="text-gray-600">{format(new Date(), "EEEE, MMMM d, yyyy")}</div>
@@ -688,15 +842,48 @@ export default function Attendance() {
             )}
 
             <div className="space-y-3">
-              <div className="flex items-center space-x-2">
-                <MapPin className="h-4 w-4 text-gray-500" />
-                <span className="text-sm">{currentLocation}</span>
-              </div>
-              <div className="flex items-center space-x-2">
-                <Wifi className="h-4 w-4 text-gray-500" />
-                <span className="text-sm">{currentIP}</span>
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                <div className="flex items-start space-x-3 rounded-lg border border-gray-100 bg-gray-50 p-3">
+                  <div className="flex h-9 w-9 items-center justify-center rounded-full bg-white shadow-sm">
+                    <MapPin className="h-4 w-4 text-[#891F1A]" />
+                  </div>
+                  <div>
+                    <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">
+                      Location
+                    </p>
+                    <p className="text-sm font-medium text-gray-700">{currentLocation}</p>
+                  </div>
+                </div>
+                <div className="flex items-start space-x-3 rounded-lg border border-gray-100 bg-gray-50 p-3">
+                  <div className="flex h-9 w-9 items-center justify-center rounded-full bg-white shadow-sm">
+                    <Wifi className="h-4 w-4 text-[#891F1A]" />
+                  </div>
+                  <div>
+                    <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">
+                      IP Address
+                    </p>
+                    <p className="text-sm font-medium text-gray-700">{currentIP}</p>
+                  </div>
+                </div>
+                <div className="flex items-start space-x-3 rounded-lg border border-gray-100 bg-gray-50 p-3">
+                  <div className="flex h-9 w-9 items-center justify-center rounded-full bg-white shadow-sm">
+                    <Monitor className="h-4 w-4 text-[#891F1A]" />
+                  </div>
+                  <div>
+                    <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">
+                      Device
+                    </p>
+                    <p className="text-sm font-medium text-gray-700">{currentDevice}</p>
+                  </div>
+                </div>
               </div>
             </div>
+
+            {statusMessage && (
+              <div className="rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-700">
+                {statusMessage}
+              </div>
+            )}
 
             <div className="pt-4">
               {!isCheckedIn ? (
@@ -704,19 +891,20 @@ export default function Attendance() {
                   onClick={handleCheckIn}
                   className="w-full bg-[#891F1A] text-white hover:bg-[#A23E37] active:bg-[#751713]"
                   size="lg"
-                  disabled={currentLocation === "Detecting location..."}
+                  disabled={isActionLoading || currentLocation === "Detecting location..."}
                 >
                   <CheckCircle className="h-5 w-5 mr-2" />
-                  Check In
+                  {isActionLoading ? "Processing..." : "Check In"}
                 </Button>
               ) : (
                 <Button
                   onClick={handleCheckOut}
                   className="w-full bg-[#891F1A] text-white hover:bg-[#A23E37] active:bg-[#751713]"
                   size="lg"
+                  disabled={isActionLoading}
                 >
                   <XCircle className="h-5 w-5 mr-2" />
-                  Check Out
+                  {isActionLoading ? "Processing..." : "Check Out"}
                 </Button>
               )}
             </div>
@@ -781,7 +969,10 @@ export default function Attendance() {
                   type="number"
                   value={rules.standardWorkMinutes}
                   onChange={(e) =>
-                    setRules({ ...rules, standardWorkMinutes: safeParseInt(e.target.value, 480) })
+                    setRules({
+                      ...rules,
+                      standardWorkMinutes: safeParseInt(e.target.value, 480),
+                    })
                   }
                 />
               </div>
@@ -791,7 +982,10 @@ export default function Attendance() {
                   type="number"
                   value={rules.overtimeAfterMinutes}
                   onChange={(e) =>
-                    setRules({ ...rules, overtimeAfterMinutes: safeParseInt(e.target.value, 480) })
+                    setRules({
+                      ...rules,
+                      overtimeAfterMinutes: safeParseInt(e.target.value, 480),
+                    })
                   }
                 />
               </div>
@@ -801,7 +995,10 @@ export default function Attendance() {
                   type="number"
                   value={rules.latePenaltyPerMinute}
                   onChange={(e) =>
-                    setRules({ ...rules, latePenaltyPerMinute: Number(e.target.value) || 0 })
+                    setRules({
+                      ...rules,
+                      latePenaltyPerMinute: Number(e.target.value) || 0,
+                    })
                   }
                 />
               </div>
@@ -839,7 +1036,9 @@ export default function Attendance() {
                     setRules({ ...rules, weekendDays: arr });
                   }}
                 />
-                <p className="text-xs text-gray-500 mt-1">Example: UAE (Fri, Sat) → 5,6</p>
+                <p className="text-xs text-gray-500 mt-1">
+                  Example: UAE (Fri, Sat) → 5,6
+                </p>
               </div>
             </CardContent>
           </Card>
@@ -917,12 +1116,21 @@ export default function Attendance() {
                     </Button>
                   </PopoverTrigger>
                   <PopoverContent className="w-auto p-0" align="start">
-                    <Calendar mode="single" selected={selectedDate} onSelect={setSelectedDate} initialFocus />
+                    <Calendar
+                      mode="single"
+                      selected={selectedDate}
+                      onSelect={setSelectedDate}
+                      initialFocus
+                    />
                   </PopoverContent>
                 </Popover>
 
                 {selectedDate && (
-                  <Button variant="ghost" onClick={() => setSelectedDate(undefined)} className="text-[#891F1A]">
+                  <Button
+                    variant="ghost"
+                    onClick={() => setSelectedDate(undefined)}
+                    className="text-[#891F1A]"
+                  >
                     Clear Date
                   </Button>
                 )}
@@ -931,24 +1139,44 @@ export default function Attendance() {
 
             {/* Table */}
             <div className="relative">
-              <ScrollAreaWithRail heightClass="max-h-[29rem]" railPosition="outside" contentRightGap={12}>
+              <ScrollAreaWithRail
+                heightClass="max-h-[29rem]"
+                railPosition="outside"
+                contentRightGap={12}
+              >
                 <div className="rounded-md border bg-white">
                   <Table className="w-full text-sm">
                     <TableHeader>
                       <TableRow>
+                        <TableHead className="sticky top-0 z-20 bg-[#891F1A] text-white text-center rounded-tl-md">
+                          Device
+                        </TableHead>
                         {isAdminRole && (
-                          <TableHead className="sticky top-0 z-20 bg-[#891F1A] text-white text-center rounded-tl-md">
+                          <TableHead className="sticky top-0 z-20 bg-[#891F1A] text-white text-center">
                             Employee
                           </TableHead>
                         )}
-                        <TableHead className="sticky top-0 z-20 bg-[#891F1A] text-white text-center">Date</TableHead>
-                        <TableHead className="sticky top-0 z-20 bg-[#891F1A] text-white text-center">Check In</TableHead>
-                        <TableHead className="sticky top-0 z-20 bg-[#891F1A] text-white text-center">Check Out</TableHead>
-                        <TableHead className="sticky top-0 z-20 bg-[#891F1A] text-white text-center">Duration</TableHead>
-                        <TableHead className="sticky top-0 z-20 bg-[#891F1A] text-white text-center">Location</TableHead>
-                        <TableHead className="sticky top-0 z-20 bg-[#891F1A] text-white text-center">IP Address</TableHead>
-                        <TableHead className="sticky top-0 z-20 bg-[#891F1A] text-white text-center">Device</TableHead>
-                        <TableHead className="sticky top-0 z-20 bg-[#891F1A] text-white text-center rounded-tr-md">Status</TableHead>
+                        <TableHead className="sticky top-0 z-20 bg-[#891F1A] text-white text-center">
+                          Date
+                        </TableHead>
+                        <TableHead className="sticky top-0 z-20 bg-[#891F1A] text-white text-center">
+                          Check In
+                        </TableHead>
+                        <TableHead className="sticky top-0 z-20 bg-[#891F1A] text-white text-center">
+                          Check Out
+                        </TableHead>
+                        <TableHead className="sticky top-0 z-20 bg-[#891F1A] text-white text-center">
+                          Duration
+                        </TableHead>
+                        <TableHead className="sticky top-0 z-20 bg-[#891F1A] text-white text-center">
+                          Location
+                        </TableHead>
+                        <TableHead className="sticky top-0 z-20 bg-[#891F1A] text-white text-center">
+                          IP Address
+                        </TableHead>
+                        <TableHead className="sticky top-0 z-20 bg-[#891F1A] text-white text-center rounded-tr-md">
+                          Status
+                        </TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
@@ -956,14 +1184,28 @@ export default function Attendance() {
                         .filter((r) => isAdminRole || r.employeeName === user.name)
                         .map((record) => (
                           <TableRow key={record.id}>
-                            {isAdminRole && <TableCell className="font-medium text-center">{record.employeeName}</TableCell>}
+                            <TableCell className="text-center font-medium">
+                              {record.device}
+                            </TableCell>
+                            {isAdminRole && (
+                              <TableCell className="font-medium text-center">
+                                {record.employeeName}
+                              </TableCell>
+                            )}
                             <TableCell className="text-center">{record.date}</TableCell>
                             <TableCell className="text-center">{record.checkIn}</TableCell>
-                            <TableCell className="text-center">{record.checkOut || "In Progress"}</TableCell>
-                            <TableCell className="text-center">{record.duration}</TableCell>
-                            <TableCell className="text-center max-w-xs truncate">{record.location.address}</TableCell>
-                            <TableCell className="text-center">{record.ipAddress}</TableCell>
-                            <TableCell className="text-center">{record.device}</TableCell>
+                            <TableCell className="text-center">
+                              {record.checkOut || "In Progress"}
+                            </TableCell>
+                            <TableCell className="text-center">
+                              {record.duration}
+                            </TableCell>
+                            <TableCell className="text-center max-w-xs truncate">
+                              {record.location.address}
+                            </TableCell>
+                            <TableCell className="text-center">
+                              {record.ipAddress}
+                            </TableCell>
                             <TableCell className="text-center">
                               <Badge className="bg-[#891F1A] text-white">{record.status}</Badge>
                             </TableCell>
@@ -974,12 +1216,17 @@ export default function Attendance() {
                 </div>
               </ScrollAreaWithRail>
 
-              {filteredRecords.filter((r) => isAdminRole || r.employeeName === user.name).length === 0 && (
+              {filteredRecords.filter((r) => isAdminRole || r.employeeName === user.name).length ===
+                0 && (
                 <div className="text-center py-8">
                   <Clock className="h-12 w-12 text-gray-400 mx-auto mb-4" />
-                  <h3 className="text-lg font-medium text-gray-900 mb-2">No records found</h3>
+                  <h3 className="text-lg font-medium text-gray-900 mb-2">
+                    No records found
+                  </h3>
                   <p className="text-gray-600">
-                    {searchTerm || selectedDate ? "Try adjusting your search criteria" : "No attendance records available"}
+                    {searchTerm || selectedDate
+                      ? "Try adjusting your search criteria"
+                      : "No attendance records available"}
                   </p>
                 </div>
               )}
@@ -992,25 +1239,51 @@ export default function Attendance() {
       {payrollRows.length > 0 && (
         <Card>
           <CardHeader>
-            <CardTitle className="text-[#891F1A]">Payroll Summary — {payrollMonth}</CardTitle>
+            <CardTitle className="text-[#891F1A]">
+              Payroll Summary — {payrollMonth}
+            </CardTitle>
           </CardHeader>
           <CardContent>
             <div className="rounded-md border bg-white overflow-auto">
               <Table className="w-full text-sm">
                 <TableHeader>
                   <TableRow>
-                    <TableHead className="bg-[#891F1A] text-white text-center">Employee</TableHead>
-                    <TableHead className="bg-[#891F1A] text-white text-center">Working Days</TableHead>
-                    <TableHead className="bg-[#891F1A] text-white text-center">Present</TableHead>
-                    <TableHead className="bg-[#891F1A] text-white text-center">Absent</TableHead>
-                    <TableHead className="bg-[#891F1A] text-white text-center">Late (min)</TableHead>
-                    <TableHead className="bg-[#891F1A] text-white text-center">OT (min)</TableHead>
-                    <TableHead className="bg-[#891F1A] text-white text-center">Base (AED)</TableHead>
-                    <TableHead className="bg-[#891F1A] text-white text-center">Absent Ded. (AED)</TableHead>
-                    <TableHead className="bg-[#891F1A] text-white text-center">Late Ded. (AED)</TableHead>
-                    <TableHead className="bg-[#891F1A] text-white text-center">OT Pay (AED)</TableHead>
-                    <TableHead className="bg-[#891F1A] text-white text-center">Net Pay (AED)</TableHead>
-                    <TableHead className="bg-[#891F1A] text-white text-center">Payslip</TableHead>
+                    <TableHead className="bg-[#891F1A] text-white text-center">
+                      Employee
+                    </TableHead>
+                    <TableHead className="bg-[#891F1A] text-white text-center">
+                      Working Days
+                    </TableHead>
+                    <TableHead className="bg-[#891F1A] text-white text-center">
+                      Present
+                    </TableHead>
+                    <TableHead className="bg-[#891F1A] text-white text-center">
+                      Absent
+                    </TableHead>
+                    <TableHead className="bg-[#891F1A] text-white text-center">
+                      Late (min)
+                    </TableHead>
+                    <TableHead className="bg-[#891F1A] text-white text-center">
+                      OT (min)
+                    </TableHead>
+                    <TableHead className="bg-[#891F1A] text-white text-center">
+                      Base (AED)
+                    </TableHead>
+                    <TableHead className="bg-[#891F1A] text-white text-center">
+                      Absent Ded. (AED)
+                    </TableHead>
+                    <TableHead className="bg-[#891F1A] text-white text-center">
+                      Late Ded. (AED)
+                    </TableHead>
+                    <TableHead className="bg-[#891F1A] text-white text-center">
+                      OT Pay (AED)
+                    </TableHead>
+                    <TableHead className="bg-[#891F1A] text-white text-center">
+                      Net Pay (AED)
+                    </TableHead>
+                    <TableHead className="bg-[#891F1A] text-white text-center">
+                      Payslip
+                    </TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -1018,17 +1291,27 @@ export default function Attendance() {
                     .filter((r) => isAdminRole || r.employee.name === user.name)
                     .map((row) => (
                       <TableRow key={row.employee.id}>
-                        <TableCell className="text-center">{row.employee.name}</TableCell>
+                        <TableCell className="text-center">
+                          {row.employee.name}
+                        </TableCell>
                         <TableCell className="text-center">{row.workingDays}</TableCell>
                         <TableCell className="text-center">{row.presentDays}</TableCell>
                         <TableCell className="text-center">{row.absentDays}</TableCell>
                         <TableCell className="text-center">{row.totalLateMinutes}</TableCell>
                         <TableCell className="text-center">{row.totalOvertimeMinutes}</TableCell>
                         <TableCell className="text-center">{row.baseSalary.toFixed(2)}</TableCell>
-                        <TableCell className="text-center">{row.absentDeduction.toFixed(2)}</TableCell>
-                        <TableCell className="text-center">{row.lateDeduction.toFixed(2)}</TableCell>
-                        <TableCell className="text-center">{row.overtimePay.toFixed(2)}</TableCell>
-                        <TableCell className="text-center font-semibold">{row.netPay.toFixed(2)}</TableCell>
+                        <TableCell className="text-center">
+                          {row.absentDeduction.toFixed(2)}
+                        </TableCell>
+                        <TableCell className="text-center">
+                          {row.lateDeduction.toFixed(2)}
+                        </TableCell>
+                        <TableCell className="text-center">
+                          {row.overtimePay.toFixed(2)}
+                        </TableCell>
+                        <TableCell className="text-center font-semibold">
+                          {row.netPay.toFixed(2)}
+                        </TableCell>
                         <TableCell className="text-center">
                           <Button
                             size="sm"

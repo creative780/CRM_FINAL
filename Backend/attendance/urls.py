@@ -6,6 +6,7 @@ from .views import (
     attendance_payroll,
     attendance_rules,
     attendance_summary,
+    attendance_context,
     check_in,
     check_out,
 )
@@ -13,6 +14,7 @@ from .views import (
 urlpatterns = [
     path('attendance/check-in/', check_in, name='attendance-check-in'),
     path('attendance/check-out/', check_out, name='attendance-check-out'),
+    path('attendance/context/', attendance_context, name='attendance-context'),
     path('attendance/', attendance_list, name='attendance-list'),
     path('attendance/me/', attendance_me, name='attendance-me'),
     path('attendance/summary/', attendance_summary, name='attendance-summary'),
