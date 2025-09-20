@@ -209,6 +209,7 @@ export default function OrderLifecyclePage() {
   const [pendingBaseProduct, setPendingBaseProduct] = useState<BaseProduct | null>(null);
   const [pendingInitialQty, setPendingInitialQty] = useState<number | undefined>(undefined);
   const [pendingInitialAttributes, setPendingInitialAttributes] = useState<Record<string, string> | undefined>(undefined);
+  const [pendingInitialPrice, setPendingInitialPrice] = useState<number | undefined>(undefined);
   const [editingProductId, setEditingProductId] = useState<string | null>(null);
   const handleAddProductClick = useCallback(() => {
     setShowSearchModal(true);
@@ -218,6 +219,7 @@ export default function OrderLifecyclePage() {
     setPendingBaseProduct(null);
     setPendingInitialQty(undefined);
     setPendingInitialAttributes(undefined);
+    setPendingInitialPrice(undefined);
     setEditingProductId(null);
   };
 
@@ -225,6 +227,7 @@ export default function OrderLifecyclePage() {
     setPendingBaseProduct(product);
     setPendingInitialQty(qty);
     setPendingInitialAttributes(undefined);
+    setPendingInitialPrice(product.defaultPrice);
     setEditingProductId(null);
     setShowSearchModal(false);
     setShowConfigModal(true);
@@ -260,6 +263,7 @@ export default function OrderLifecyclePage() {
     });
     setPendingInitialQty(existing.quantity);
     setPendingInitialAttributes(existing.attributes);
+    setPendingInitialPrice(existing.price);
     setEditingProductId(existing.id);
     setShowConfigModal(true);
   }, [selectedProducts]);
@@ -769,6 +773,7 @@ export default function OrderLifecyclePage() {
         onConfirm={handleConfirmProduct}
         initialQty={pendingInitialQty || 1}
         initialAttributes={pendingInitialAttributes || {}}
+        initialPrice={pendingInitialPrice || 0}
         editingProductId={editingProductId ?? undefined}
         onBack={handleBackToSearch}
       />

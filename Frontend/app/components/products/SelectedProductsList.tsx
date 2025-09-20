@@ -31,6 +31,7 @@ export default function SelectedProductsList({
             name={item.name}
             imageUrl={item.imageUrl}
             quantity={item.quantity}
+            price={item.price}
             onRemove={() => onRemove(item.id)}
             onEdit={() => onEdit(item.id)}
           />
@@ -41,9 +42,14 @@ export default function SelectedProductsList({
       <div className="text-xs text-gray-600 pt-2 border-t border-gray-100">
         {items.length} product{items.length !== 1 ? 's' : ''} selected
         {items.length > 0 && (
-          <span className="ml-2">
-            • Total quantity: {items.reduce((sum, item) => sum + item.quantity, 0)}
-          </span>
+          <>
+            <span className="ml-2">
+              • Total quantity: {items.reduce((sum, item) => sum + item.quantity, 0)}
+            </span>
+            <span className="ml-2">
+              • Total value: AED {items.reduce((sum, item) => sum + (item.price * item.quantity), 0).toFixed(2)}
+            </span>
+          </>
         )}
       </div>
     </div>

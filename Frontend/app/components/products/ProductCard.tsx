@@ -8,6 +8,7 @@ export interface ProductCardProps {
   name: string;
   imageUrl?: string;
   quantity?: number;
+  price?: number;               // unit price
   onClick?: () => void;         // for result select
   onRemove?: () => void;        // for selected remove
   onEdit?: () => void;          // for selected edit
@@ -19,6 +20,7 @@ export default function ProductCard({
   name,
   imageUrl,
   quantity,
+  price,
   onClick,
   onRemove,
   onEdit,
@@ -82,8 +84,15 @@ export default function ProductCard({
 
               {/* Quantity Display (selected mode) */}
               {isSelected && (
-                <div className="text-xs text-gray-600">
-                  <span className="text-gray-500">Qty:</span> {quantity || 1}
+                <div className="space-y-1">
+                  <div className="text-xs text-gray-600">
+                    <span className="text-gray-500">Qty:</span> {quantity || 1}
+                  </div>
+                  {price !== undefined && (
+                    <div className="text-xs text-gray-600">
+                      <span className="text-gray-500">Price:</span> AED {price.toFixed(2)}
+                    </div>
+                  )}
                 </div>
               )}
             </div>

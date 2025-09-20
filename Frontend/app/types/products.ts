@@ -4,6 +4,8 @@ export interface BaseProduct {
   id: string;
   name: string;
   imageUrl?: string;
+  defaultPrice?: number;  // default unit price
+  stock?: number;         // available stock quantity
 }
 
 export interface ProductAttribute {
@@ -18,6 +20,13 @@ export interface ConfiguredProduct {
   name: string;
   imageUrl?: string;
   quantity: number;
+  price: number;           // unit price
   attributes: Record<string, string>; // { size: "L", color: "Red" }
   sku?: string;
+  design?: {
+    ready: boolean;
+    needCustom: boolean;
+    customRequirements: string;
+    files: Array<{ name: string; size: number; type: string }>;
+  };
 }

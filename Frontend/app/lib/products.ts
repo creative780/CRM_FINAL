@@ -15,152 +15,212 @@ export async function searchProducts(q: string): Promise<BaseProduct[]> {
       {
         id: "1",
         name: "Business Cards",
-        imageUrl: "/images/logo.png"
+        imageUrl: "/images/logo.png",
+        defaultPrice: 25.00,
+        stock: 150
       },
       {
         id: "2", 
         name: "Flyers",
-        imageUrl: "/images/img1.jpg"
+        imageUrl: "/images/img1.jpg",
+        defaultPrice: 15.00,
+        stock: 200
       },
       {
         id: "3",
         name: "Brochures",
-        imageUrl: "/images/img2.jpg"
+        imageUrl: "/images/img2.jpg",
+        defaultPrice: 45.00,
+        stock: 85
       },
       {
         id: "4",
         name: "Posters",
-        imageUrl: "/images/img3.jpg"
+        imageUrl: "/images/img3.jpg",
+        defaultPrice: 35.00,
+        stock: 120
       },
       {
         id: "5",
         name: "Banners",
-        imageUrl: "/images/img4.jpg"
+        imageUrl: "/images/img4.jpg",
+        defaultPrice: 85.00,
+        stock: 45
       },
       {
         id: "6",
         name: "Letterheads",
-        imageUrl: "/images/img5.jpg"
+        imageUrl: "/images/img5.jpg",
+        defaultPrice: 20.00,
+        stock: 75
       },
       {
         id: "7",
         name: "Envelopes",
-        imageUrl: "/images/img6.jpg"
+        imageUrl: "/images/img6.jpg",
+        defaultPrice: 12.00,
+        stock: 300
       },
       {
         id: "8",
         name: "Stickers",
-        imageUrl: "/images/img7.jpg"
+        imageUrl: "/images/img7.jpg",
+        defaultPrice: 8.00,
+        stock: 500
       },
       {
         id: "9",
         name: "Booklets",
-        imageUrl: "/images/img8.jpg"
+        imageUrl: "/images/img8.jpg",
+        defaultPrice: 65.00,
+        stock: 90
       },
       {
         id: "10",
         name: "Catalogs",
-        imageUrl: "/images/img9.jpg"
+        imageUrl: "/images/img9.jpg",
+        defaultPrice: 95.00,
+        stock: 60
       },
       {
         id: "11",
         name: "Magazines",
-        imageUrl: "/images/img10.jpg"
+        imageUrl: "/images/img10.jpg",
+        defaultPrice: 75.00,
+        stock: 110
       },
       {
         id: "12",
         name: "Newspapers",
-        imageUrl: "/images/img11.jpg"
+        imageUrl: "/images/img11.jpg",
+        defaultPrice: 15.00,
+        stock: 250
       },
       {
         id: "13",
         name: "Calendars",
-        imageUrl: "/images/img12.jpg"
+        imageUrl: "/images/img12.jpg",
+        defaultPrice: 42.00,
+        stock: 180
       },
       {
         id: "14",
         name: "Menus",
-        imageUrl: "/images/m1.jpg"
+        imageUrl: "/images/m1.jpg",
+        defaultPrice: 28.00,
+        stock: 95
       },
       {
         id: "15",
         name: "Invitation Cards",
-        imageUrl: "/images/m2.jpg"
+        imageUrl: "/images/m2.jpg",
+        defaultPrice: 18.00,
+        stock: 220
       },
       {
         id: "16",
         name: "Wedding Cards",
-        imageUrl: "/images/m3.jpg"
+        imageUrl: "/images/m3.jpg",
+        defaultPrice: 22.00,
+        stock: 140
       },
       {
         id: "17",
         name: "Birthday Cards",
-        imageUrl: "/images/m4.jpg"
+        imageUrl: "/images/m4.jpg",
+        defaultPrice: 15.00,
+        stock: 280
       },
       {
         id: "18",
         name: "Greeting Cards",
-        imageUrl: "/images/m5.jpg"
+        imageUrl: "/images/m5.jpg",
+        defaultPrice: 12.00,
+        stock: 320
       },
       {
         id: "19",
         name: "Business Forms",
-        imageUrl: "/images/b1.jpg"
+        imageUrl: "/images/b1.jpg",
+        defaultPrice: 30.00,
+        stock: 165
       },
       {
         id: "20",
         name: "Labels",
-        imageUrl: "/images/i1.jfif"
+        imageUrl: "/images/i1.jfif",
+        defaultPrice: 5.00,
+        stock: 450
       },
       {
         id: "21",
         name: "Packaging Boxes",
-        imageUrl: "/images/Plastic Ball point.jpeg"
+        imageUrl: "/images/Plastic Ball point.jpeg",
+        defaultPrice: 40.00,
+        stock: 80
       },
       {
         id: "22",
         name: "Shopping Bags",
-        imageUrl: "/images/printing-illustration.png"
+        imageUrl: "/images/printing-illustration.png",
+        defaultPrice: 25.00,
+        stock: 200
       },
       {
         id: "23",
         name: "Billboards",
-        imageUrl: "/images/Banner2.jpg"
+        imageUrl: "/images/Banner2.jpg",
+        defaultPrice: 150.00,
+        stock: 25
       },
       {
         id: "24",
         name: "Vehicle Wraps",
-        imageUrl: "/images/Banner3.jpg"
+        imageUrl: "/images/Banner3.jpg",
+        defaultPrice: 200.00,
+        stock: 15
       },
       {
         id: "25",
         name: "Window Graphics",
-        imageUrl: "/images/IMG-20250707-WA0008.jpg"
+        imageUrl: "/images/IMG-20250707-WA0008.jpg",
+        defaultPrice: 65.00,
+        stock: 70
       },
       {
         id: "26",
         name: "T-Shirts",
-        imageUrl: "/images/IMG-20250707-WA0020.jpg"
+        imageUrl: "/images/IMG-20250707-WA0020.jpg",
+        defaultPrice: 18.00,
+        stock: 350
       },
       {
         id: "27",
         name: "Mugs",
-        imageUrl: "/images/IMG-20250707-WA0022.jpg"
+        imageUrl: "/images/IMG-20250707-WA0022.jpg",
+        defaultPrice: 12.00,
+        stock: 180
       },
       {
         id: "28",
         name: "Keychains",
-        imageUrl: "/images/IMG-20250714-WA0007.jpg"
+        imageUrl: "/images/IMG-20250714-WA0007.jpg",
+        defaultPrice: 6.00,
+        stock: 400
       },
       {
         id: "29",
         name: "Notebooks",
-        imageUrl: "/images/IMG-20250714-WA0008.jpg"
+        imageUrl: "/images/IMG-20250714-WA0008.jpg",
+        defaultPrice: 15.00,
+        stock: 120
       },
       {
         id: "30",
         name: "Pens",
-        imageUrl: "/images/IMG-20250714-WA0009.jpg"
+        imageUrl: "/images/IMG-20250714-WA0009.jpg",
+        defaultPrice: 3.00,
+        stock: 500
       }
     ];
 
