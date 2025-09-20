@@ -60,11 +60,11 @@ class Attendance(models.Model):
     ip_address = models.GenericIPAddressField(null=True, blank=True)
     device_id = models.CharField(max_length=255, blank=True)
     device_info = models.CharField(max_length=255, blank=True)
+    device_name = models.CharField(max_length=255, null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:
-        unique_together = ['employee', 'date']
         ordering = ['-date', '-check_in']
 
     def __str__(self):

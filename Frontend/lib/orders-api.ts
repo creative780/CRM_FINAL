@@ -1,14 +1,22 @@
-import { api } from './api';
+﻿import { api } from './api';
+
+export interface OrderItem {
+  product_id?: string;
+  name: string;
+  quantity: number;
+  attributes?: Record<string, string>;
+  sku?: string;
+}
 
 export interface Order {
   id: number;
   order_id: string;
   client_name: string;
-  product_type: string;
   specs: string;
   urgency: string;
   status: string;
   stage: string;
+  items?: OrderItem[];
   created_by: number | null;
   created_at: string;
   updated_at: string;
@@ -54,9 +62,9 @@ export interface OrderDelivery {
 
 export interface OrderCreatePayload {
   clientName: string;
-  productType: string;
   specs?: string;
   urgency?: string;
+  items?: OrderItem[];
 }
 
 export const ordersApi = {

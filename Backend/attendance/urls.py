@@ -12,8 +12,11 @@ from .views import (
 )
 
 urlpatterns = [
+    # Support both with and without trailing slashes for POST safety (no 404 redirects)
     path('attendance/check-in/', check_in, name='attendance-check-in'),
+    path('attendance/check-in', check_in),
     path('attendance/check-out/', check_out, name='attendance-check-out'),
+    path('attendance/check-out', check_out),
     path('attendance/context/', attendance_context, name='attendance-context'),
     path('attendance/', attendance_list, name='attendance-list'),
     path('attendance/me/', attendance_me, name='attendance-me'),

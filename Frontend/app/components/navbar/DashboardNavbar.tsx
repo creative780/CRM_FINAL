@@ -3,6 +3,7 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import Link from "next/link";
+import { api } from "@/lib/api";
 import { FaUserCircle } from "react-icons/fa";
 
 type RoleKey = "sales" | "designer" | "production" | "admin" | "default";
@@ -91,8 +92,23 @@ export default function DashboardNavbar() {
     }
   }, [ready, role, pathname, navLinks, router]);
 
-  const handleLogout = () => {
+  const handleLogout = async () => {
     if (username) {
+      try {
+        const headers: Record<string, string> = {};
+        try {
+          const deviceId = typeof window !== 'undefined' ? (localStorage.getItem('attendance_device_id') || '') : '';
+          const deviceName = typeof window !== 'undefined' ? (localStorage.getItem('attendance_device_name') || '') : '';
+          if (deviceId) headers['X-Device-Id'] = deviceId;
+          if (deviceName) headers['X-Device-Name'] = deviceName;
+        } catch {}
+        const device_id = typeof window !== 'undefined' ? (localStorage.getItem('attendance_device_id') || '') : '';
+        const device_name = typeof window !== 'undefined' ? (localStorage.getItem('attendance_device_name') || '') : '';
+        const ip = typeof window !== 'undefined' ? (localStorage.getItem('attendance_device_ip') || '') : '';
+        await api.post('/api/auth/logout', { device_id, device_name, ip }, { headers });
+      } catch (e) {
+        // ignore logging errors
+      }
       localStorage.removeItem("admin_username");
       localStorage.removeItem("admin_token");
       localStorage.removeItem("admin_role");

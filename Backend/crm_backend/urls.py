@@ -37,6 +37,8 @@ urlpatterns = [
     path('api/', include('clients.urls')),
     path('api/', include('dashboard.urls')),
     path('api/', include('attendance.urls')),
+    # Ensure the new activity_log service owns /api/activity-logs/*
+    path('api/', include('activity_log.urls')),
     path('api/', include('audit.urls')),
     path('api/', include('chat.urls')),
 ] + static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)

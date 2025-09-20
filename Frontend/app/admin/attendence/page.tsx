@@ -84,13 +84,26 @@ interface AttendanceApiResponse {
   ip_address?: string | null;
   device_id?: string | null;
   device_info?: string | null;
+  device_name?: string | null;
   status: string;
+}
+
+interface AttendanceContextResponse {
+  ip: string;
+  location: string;
+  deviceId?: string | null;
+  deviceName?: string | null;
 }
 
 const UNKNOWN_LOCATION = "Unknown location";
 const UNKNOWN_IP = "Unknown IP";
 const UNKNOWN_DEVICE = "Unknown device";
 const DEVICE_ID_STORAGE_KEY = "attendance_device_id";
+const DEVICE_NAME_STORAGE_KEY = "attendance_device_name";
+const AGENT_URLS = [
+  "http://127.0.0.1:47113/hostname",
+  "http://localhost:47113/hostname",
+];
 
 function toNumber(value: number | string | null | undefined): number | null {
   if (value === null || value === undefined || value === "") return null;
@@ -140,7 +153,9 @@ function mapAttendanceApiRecord(record: AttendanceApiResponse): AttendanceRecord
     (checkOut ? computeDurationFromIso(record.check_in, record.check_out) : "In Progress");
 
   const ip = (record.ip_address || "").trim();
-  const device = (record.device_info || record.device_id || "").trim();
+  const deviceName = (record.device_name || "").trim();
+  const device =
+    deviceName || (record.device_id || record.device_info || "").trim() || UNKNOWN_DEVICE;
 
   const status = record.status === "late" || record.status === "absent" ? record.status : "present";
 
@@ -157,7 +172,7 @@ function mapAttendanceApiRecord(record: AttendanceApiResponse): AttendanceRecord
       address: locationAddress || UNKNOWN_LOCATION,
     },
     ipAddress: ip || UNKNOWN_IP,
-    device: device || UNKNOWN_DEVICE,
+    device,
     status,
   };
 }
@@ -291,6 +306,7 @@ export default function Attendance() {
   const [checkInTime, setCheckInTime] = useState<string | null>(null);
   const [deviceId, setDeviceId] = useState<string | null>(null);
   const [isActionLoading, setIsActionLoading] = useState(false);
+  const [agentDeviceName, setAgentDeviceName] = useState<string | null>(null);
 
   // Payroll UI
   const [payrollMonth, setPayrollMonth] = useState<string>(() => {
@@ -313,9 +329,37 @@ export default function Attendance() {
         localStorage.setItem(DEVICE_ID_STORAGE_KEY, stored);
       }
       setDeviceId(stored);
+      // Also restore user provided device name if present
     } catch {
       setDeviceId(null);
     }
+  }, []);
+
+  // Try local HostAgent to get OS hostname automatically
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      for (const url of AGENT_URLS) {
+        try {
+          const ctrl = new AbortController();
+          const timeout = setTimeout(() => ctrl.abort(), 800);
+          const resp = await fetch(url, { signal: ctrl.signal });
+          clearTimeout(timeout);
+          if (!resp.ok) continue;
+          const data = await resp.json();
+            const name = (data?.deviceName || '').toString().trim();
+            if (name && !cancelled) {
+              setAgentDeviceName(name);
+              setCurrentDevice(name);
+              try { localStorage.setItem(DEVICE_NAME_STORAGE_KEY, name); } catch {}
+              break;
+            }
+        } catch (_) {
+          // continue to next url
+        }
+      }
+    })();
+    return () => { cancelled = true; };
   }, []);
 
   // Detect IP, location and device info on mount
@@ -325,8 +369,7 @@ export default function Attendance() {
 
     const fetchMeta = async () => {
       try {
-        const ua = navigator.userAgent || "";
-        if (!cancelled) setCurrentDevice(ua || UNKNOWN_DEVICE);
+        
 
         const ipRes = await fetch("https://api.ipify.org?format=json");
         const ipData = await ipRes.json();
@@ -348,10 +391,7 @@ export default function Attendance() {
           setCurrentLocation(addr || UNKNOWN_LOCATION);
         }
       } catch {
-        if (!cancelled) {
-          setCurrentLocation(UNKNOWN_LOCATION);
-          setCurrentIP(UNKNOWN_IP);
-        }
+        // keep existing values; do not override with Unknown
       }
     };
 
@@ -361,7 +401,30 @@ export default function Attendance() {
       cancelled = true;
     };
   }, []);
-
+  // Prefer server-provided context (reverse DNS, then backend fallbacks).
+  // Include local HostAgent device name when available.
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const headers: Record<string, string> = deviceId ? { "X-Device-Id": deviceId } : {};
+        if (agentDeviceName) headers["X-Device-Name"] = agentDeviceName;
+        const ctx = await api.get<AttendanceContextResponse>("/api/attendance/context/", { headers });
+        if (cancelled) return;
+        if (ctx.location) setCurrentLocation(ctx.location);
+        if (ctx.ip) setCurrentIP(ctx.ip);
+        if (ctx.deviceName) {
+          setCurrentDevice(ctx.deviceName);
+          try { localStorage.setItem(DEVICE_NAME_STORAGE_KEY, ctx.deviceName); } catch {}
+        }
+      } catch {
+        // ignore
+      }
+    })();
+    return () => { cancelled = true; };
+  
+  }, [deviceId, agentDeviceName]);
   /** Load employees & rules from localStorage (seed on first run) */
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -416,14 +479,17 @@ export default function Attendance() {
       const mapped = sortAttendanceRecords(response.map(mapAttendanceApiRecord));
       const latest = mapped[0];
 
+      // Only update tiles with real values; keep detected/context values otherwise
       if (latest) {
-        setCurrentLocation(latest.location.address || UNKNOWN_LOCATION);
-        setCurrentIP(latest.ipAddress || UNKNOWN_IP);
-        setCurrentDevice(latest.device || UNKNOWN_DEVICE);
-      } else {
-        setCurrentLocation(UNKNOWN_LOCATION);
-        setCurrentIP(UNKNOWN_IP);
-        setCurrentDevice(UNKNOWN_DEVICE);
+        if (latest.location.address && latest.location.address !== UNKNOWN_LOCATION) {
+          setCurrentLocation(latest.location.address);
+        }
+        if (latest.ipAddress && latest.ipAddress !== UNKNOWN_IP) {
+          setCurrentIP(latest.ipAddress);
+        }
+        if (latest.device && latest.device !== UNKNOWN_DEVICE) {
+          setCurrentDevice(latest.device);
+        }
       }
 
       const today = format(new Date(), "yyyy-MM-dd");
@@ -441,9 +507,7 @@ export default function Attendance() {
       setStatusMessage(null);
       return mapped;
     } catch (error) {
-      setCurrentLocation(UNKNOWN_LOCATION);
-      setCurrentIP(UNKNOWN_IP);
-      setCurrentDevice(UNKNOWN_DEVICE);
+      // Keep existing detected/context values intact on error
       setIsCheckedIn(false);
       setCheckInTime(null);
       setStatusMessage(
@@ -506,20 +570,31 @@ export default function Attendance() {
     };
   }, [isAdminRole, loadAdminAttendance, loadCurrentAttendance]);
 
-  // Restore today's check-in if the user already has an open record
+  // Restore today's check-in for the authenticated user using the /me endpoint
+  // This avoids relying on UI name matching and works for admin role too.
   useEffect(() => {
-    const today = format(new Date(), "yyyy-MM-dd");
-    const todayRecord = attendanceRecords.find(
-      (r) => r.employeeName === user.name && r.date === today && !r.checkOut
-    );
-    if (todayRecord) {
-      setIsCheckedIn(true);
-      setCheckInTime(todayRecord.checkIn);
-    } else {
-      setIsCheckedIn(false);
-      setCheckInTime(null);
-    }
-  }, [user.name, attendanceRecords]);
+    let cancelled = false;
+    const updateMyState = async () => {
+      try {
+        const mine = await loadCurrentAttendance();
+        const today = format(new Date(), "yyyy-MM-dd");
+        const open = mine.find((r) => r.date === today && !r.checkOut);
+        if (!cancelled) {
+          setIsCheckedIn(!!open);
+          setCheckInTime(open ? open.checkIn : null);
+        }
+      } catch {
+        if (!cancelled) {
+          setIsCheckedIn(false);
+          setCheckInTime(null);
+        }
+      }
+    };
+    updateMyState();
+    return () => {
+      cancelled = true;
+    };
+  }, [attendanceRecords, loadCurrentAttendance]);
 
   /** Derived: filtered records */
   const filteredRecords = useMemo(() => {
@@ -536,20 +611,40 @@ export default function Attendance() {
   const handleCheckIn = async () => {
     setIsActionLoading(true);
     setStatusMessage(null);
+    // Only include headers when values exist; never send empty strings
+    const headers: Record<string, string> | undefined = (() => {
+      const h: Record<string, string> = {};
+      if (deviceId) h["X-Device-Id"] = deviceId;
+      if (agentDeviceName) h["X-Device-Name"] = agentDeviceName;
+      return Object.keys(h).length ? h : undefined;
+    })();
+    // Build payload and omit null/undefined values to satisfy backend validators
+    const payload: Record<string, any> = {};
+    if (currentIP && currentIP !== "Detecting IP...") payload.ip_address = currentIP;
+    if (deviceId) payload.device_id = deviceId;
+    if (currentDevice && currentDevice !== "Detecting device...") payload.device_info = currentDevice;
+    if (typeof currentLat === "number") payload.location_lat = currentLat;
+    if (typeof currentLng === "number") payload.location_lng = currentLng;
+    if (currentLocation && currentLocation !== "Detecting location...") payload.location_address = currentLocation;
+    if (agentDeviceName) payload.device_name = agentDeviceName;
+
     try {
-      const headers = deviceId ? { "X-Device-Id": deviceId } : undefined;
-      const payload = {
-        ip_address: currentIP === "Detecting IP..." ? null : currentIP,
-        device_id: deviceId,
-        device_info: currentDevice === "Detecting device..." ? null : currentDevice,
-        location_lat: currentLat,
-        location_lng: currentLng,
-        location_address: currentLocation === "Detecting location..." ? null : currentLocation,
-      };
-      const record = await api.post<AttendanceApiResponse>("/api/attendance/check-in/", payload, {
-        headers,
-      });
-      applyAttendanceRecord(record);
+      try {
+        const record = await api.post<AttendanceApiResponse>("/api/attendance/check-in/", payload, { headers });
+        applyAttendanceRecord(record);
+      } catch (e1) {
+        // Only force close if we specifically failed due to an existing open session today
+        const msg = e1 instanceof Error ? e1.message || "" : "";
+        const alreadyIn = /already checked in today/i.test(msg);
+        if (!alreadyIn) throw e1;
+        try {
+          await api.post<AttendanceApiResponse>("/api/attendance/check-out/", payload, { headers });
+        } catch (_) {
+          // Ignore if no active session was found; we'll retry check-in anyway
+        }
+        const record = await api.post<AttendanceApiResponse>("/api/attendance/check-in/", payload, { headers });
+        applyAttendanceRecord(record);
+      }
       if (isAdminRole) {
         try {
           const refreshed = await loadAdminAttendance();
@@ -573,18 +668,26 @@ export default function Attendance() {
     setIsActionLoading(true);
     setStatusMessage(null);
     try {
-      const headers = deviceId ? { "X-Device-Id": deviceId } : undefined;
-      const payload = {
-        ip_address: currentIP === "Detecting IP..." ? null : currentIP,
-        device_id: deviceId,
-        device_info: currentDevice === "Detecting device..." ? null : currentDevice,
-        location_lat: currentLat,
-        location_lng: currentLng,
-        location_address: currentLocation === "Detecting location..." ? null : currentLocation,
-      };
-      const record = await api.post<AttendanceApiResponse>("/api/attendance/check-out/", payload, {
-        headers,
-      });
+      const headers: Record<string, string> | undefined = (() => {
+        const h: Record<string, string> = {};
+        if (deviceId) h["X-Device-Id"] = deviceId;
+        if (agentDeviceName) h["X-Device-Name"] = agentDeviceName;
+        return Object.keys(h).length ? h : undefined;
+      })();
+      const payload: Record<string, any> = {};
+      if (currentIP && currentIP !== "Detecting IP...") payload.ip_address = currentIP;
+      if (deviceId) payload.device_id = deviceId;
+      if (currentDevice && currentDevice !== "Detecting device...") payload.device_info = currentDevice;
+      if (typeof currentLat === "number") payload.location_lat = currentLat;
+      if (typeof currentLng === "number") payload.location_lng = currentLng;
+      if (currentLocation && currentLocation !== "Detecting location...") payload.location_address = currentLocation;
+      if (agentDeviceName) payload.device_name = agentDeviceName;
+
+      const record = await api.post<AttendanceApiResponse>(
+        "/api/attendance/check-out/",
+        payload,
+        { headers }
+      );
       applyAttendanceRecord(record);
       if (isAdminRole) {
         try {
@@ -1180,9 +1283,7 @@ export default function Attendance() {
                       </TableRow>
                     </TableHeader>
                     <TableBody>
-                      {filteredRecords
-                        .filter((r) => isAdminRole || r.employeeName === user.name)
-                        .map((record) => (
+                      {filteredRecords.map((record) => (
                           <TableRow key={record.id}>
                             <TableCell className="text-center font-medium">
                               {record.device}
@@ -1216,8 +1317,7 @@ export default function Attendance() {
                 </div>
               </ScrollAreaWithRail>
 
-              {filteredRecords.filter((r) => isAdminRole || r.employeeName === user.name).length ===
-                0 && (
+              {filteredRecords.length === 0 && (
                 <div className="text-center py-8">
                   <Clock className="h-12 w-12 text-gray-400 mx-auto mb-4" />
                   <h3 className="text-lg font-medium text-gray-900 mb-2">

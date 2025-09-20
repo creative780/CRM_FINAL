@@ -10,6 +10,8 @@ from urllib.request import urlopen
 
 from django.http import HttpRequest
 
+from app.common.net_utils import get_client_ip
+
 PRIVATE_IP_PREFIXES = (
     "127.",
     "10.",
@@ -34,20 +36,6 @@ PRIVATE_IP_PREFIXES = (
 )
 
 IP_LOOKUP_URL = "https://ipapi.co/{ip}/json/"
-
-
-def get_client_ip(request: HttpRequest) -> Optional[str]:
-    """Return the best-effort client IP from the request headers."""
-
-    x_forwarded_for = request.META.get("HTTP_X_FORWARDED_FOR")
-    if x_forwarded_for:
-        ip = x_forwarded_for.split(",")[0].strip()
-    else:
-        ip = request.META.get("REMOTE_ADDR")
-    if ip:
-        return ip
-    return None
-
 
 def get_client_device(
     request: HttpRequest,

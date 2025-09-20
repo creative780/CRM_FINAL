@@ -1,6 +1,6 @@
 "use client";
 import { AnimatePresence, motion } from "framer-motion";
-import { useState, useMemo, useRef } from "react";
+import { useState, useMemo, useRef, useEffect } from "react";
 import { useUser } from "@/contexts/user-context";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -41,6 +41,7 @@ import { format } from "date-fns";
 import DetachedScrollbar from "@/app/components/DetachedScrollbar";
 import ScrollAreaWithRail from "@/app/components/ScrollAreaWithRail";
 import DashboardNavbar from "@/app/components/navbar/DashboardNavbar";
+import { listActivityLogs, type ActivityEvent as BEActivityEvent } from "@/lib/activity-logs";
 
 interface ActivityLog {
   id: string;
@@ -306,9 +307,85 @@ const mockActivityLogs: ActivityLog[] = [
   },
 ];
 
+function mapVerbToAction(verb: string): string {
+  switch (verb) {
+    case "LOGIN":
+      return "User Login";
+    case "LOGOUT":
+      return "User Logout";
+    case "UPLOAD":
+      return "File Upload";
+    case "SCREENSHOT":
+      return "Screenshot Taken";
+    case "CREATE":
+      return "Created";
+    case "UPDATE":
+      return "Updated";
+    case "DELETE":
+      return "Deleted";
+    case "ASSIGN":
+      return "Assigned";
+    case "APPROVE":
+      return "Approved";
+    case "REJECT":
+      return "Rejected";
+    case "STATUS_CHANGE":
+      return "Status Change";
+    case "COMMENT":
+      return "Comment";
+    default:
+      return verb;
+  }
+}
+
+function mapSeverity(sev?: string | null): "low" | "medium" | "high" {
+  const s = (sev || "").toLowerCase();
+  if (s === "critical" || s === "error" || s === "high") return "high";
+  if (s === "warn" || s === "warning" || s === "medium") return "medium";
+  return "low";
+}
+
+function mapCategory(ev: BEActivityEvent): ActivityLog["category"] {
+  if (ev.verb === "LOGIN" || ev.verb === "LOGOUT") return "auth";
+  if (ev.verb === "UPLOAD") return "file";
+  if (ev.verb === "SCREENSHOT") return "monitoring";
+  if (ev.verb === "COMMENT") return "communication";
+  // Heuristic: security if tags include 'security' or source is WEBHOOK and verb not in common list
+  const tags = (ev.context?.tags as string[] | undefined) || [];
+  if (tags.includes("security")) return "security";
+  return "system";
+}
+
+function mapEventToLog(ev: BEActivityEvent): ActivityLog {
+  const ts = new Date(ev.timestamp);
+  const filename = (ev.context?.filename as string | undefined) || "";
+  const details = filename
+    ? `${mapVerbToAction(ev.verb)} ${ev.target?.type}:${ev.target?.id} (${filename})`
+    : `${mapVerbToAction(ev.verb)} ${ev.target?.type}:${ev.target?.id}`;
+  return {
+    id: ev.id,
+    user: ev.actor?.name || ev.actor?.id || "System",
+    action: mapVerbToAction(ev.verb),
+    timestamp: isNaN(ts.getTime()) ? ev.timestamp : `${format(ts, "yyyy-MM-dd HH:mm:ss")}`,
+    ipAddress: (ev.context?.ip_address as string | undefined)
+      || (ev.context?.ip as string | undefined)
+      || "-",
+    device: (ev.context?.device_name as string | undefined)
+      || (ev.context?.device_id as string | undefined)
+      || (ev.context?.device_info as string | undefined)
+      || (ev.context?.user_agent as string | undefined)
+      || ev.source,
+    details,
+    category: mapCategory(ev),
+    severity: mapSeverity((ev.context?.severity as string | undefined) || null),
+    // isActive will be derived based on auth events sequence
+    isActive: false,
+  };
+}
+
 export default function ActivityLogs() {
   const { isAdmin } = useUser();
-  const [logs] = useState<ActivityLog[]>(mockActivityLogs);
+  const [logs, setLogs] = useState<ActivityLog[]>([]);
   const [searchTerm, setSearchTerm] = useState("");
   const [userFilter, setUserFilter] = useState("all");
   const [categoryFilter, setCategoryFilter] = useState("all");
@@ -318,6 +395,114 @@ export default function ActivityLogs() {
   >("all");
   const [selectedDate, setSelectedDate] = useState<Date>();
   const logsScrollRef = useRef<HTMLDivElement>(null);
+
+  // Load from backend (no UI changes)
+  useEffect(() => {
+    let mounted = true;
+    (async () => {
+      try {
+        const res = await listActivityLogs({});
+        const mapped = res.results.map(mapEventToLog);
+        // Derive per-user active status from login/logout sequence within the loaded page
+        const deriveStatuses = (rows: ActivityLog[]): ActivityLog[] => {
+          // Work from oldest to newest so state carries forward correctly
+          const asc = [...rows].reverse();
+          const activeByUser = new Map<string, boolean>();
+          for (const r of asc) {
+            if (r.category === 'auth') {
+              if (/logout/i.test(r.action)) {
+                activeByUser.set(r.user, false);
+                (r as any).isActive = false;
+              } else if (/login/i.test(r.action)) {
+                activeByUser.set(r.user, true);
+                (r as any).isActive = true;
+              } else {
+                (r as any).isActive = activeByUser.get(r.user) ?? false;
+              }
+            } else {
+              (r as any).isActive = activeByUser.get(r.user) ?? false;
+            }
+          }
+          return asc.reverse();
+        };
+        const withStatus = deriveStatuses(mapped);
+        if (mounted) setLogs(withStatus);
+      } catch (e) {
+        // keep empty/mocked logs on failure
+      }
+    })();
+    return () => {
+      mounted = false;
+    };
+  }, []);
+
+  // Note: Do not mutate stored values after fetch — display only what is recorded per event
+
+  // Borrow device/IP resolution logic from Attendance for display fallbacks
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    try {
+      let stored = localStorage.getItem('attendance_device_id');
+      if (!stored) {
+        const cryptoObj = window.crypto as Crypto & { randomUUID?: () => string };
+        const generated = (cryptoObj.randomUUID && cryptoObj.randomUUID())
+          ? cryptoObj.randomUUID()
+          : `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+        stored = generated;
+        localStorage.setItem('attendance_device_id', stored);
+      }
+      setDeviceId(stored);
+    } catch {}
+
+    (async () => {
+      try {
+        const existing = localStorage.getItem('attendance_device_name') || '';
+        if (existing) {
+          setCurrentDeviceName(existing);
+        } else {
+          const AGENT_URLS = [
+            'http://127.0.0.1:47113/hostname',
+            'http://localhost:47113/hostname',
+          ];
+          for (const u of AGENT_URLS) {
+            try {
+              const r = await fetch(u, { cache: 'no-store' });
+              if (r.ok) {
+                const name = (await r.text()).trim();
+                if (name) {
+                  localStorage.setItem('attendance_device_name', name);
+                  setCurrentDeviceName(name);
+                  break;
+                }
+              }
+            } catch {}
+          }
+        }
+      } catch {}
+    })();
+  }, []);
+
+  // Ask backend for context (IP/deviceName) using the same endpoint Attendance uses
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const headers: Record<string, string> = {};
+        const did = typeof window !== 'undefined' ? (localStorage.getItem('attendance_device_id') || '') : '';
+        const dname = typeof window !== 'undefined' ? (localStorage.getItem('attendance_device_name') || '') : '';
+        if (did) headers['X-Device-Id'] = did;
+        if (dname) headers['X-Device-Name'] = dname;
+        const ctx = await api.get<{ ip: string; deviceName?: string }>("/api/attendance/context/", { headers });
+        if (cancelled) return;
+        if (ctx?.ip) setCurrentIP(ctx.ip);
+        if (ctx?.deviceName) setCurrentDeviceName(ctx.deviceName);
+      } catch {}
+    })();
+    return () => { cancelled = true; };
+  }, []);
+
+  // Replace masked or UA-based device/IP with attendance-derived values for display
+  // Do not mutate the recorded device/IP after fetch; display as stored per event
 
   // ✅ Base filtered logs that IGNORE activeFilter (used for Active Users count)
   const baseFilteredLogs = useMemo(() => {
@@ -469,11 +654,25 @@ export default function ActivityLogs() {
   }
 
   // ✅ Count active unique users from BASE filtered logs (ignores activeFilter)
-  const activeUniqueUsers = new Set(
-    baseFilteredLogs
-      .filter((l) => l.isActive && l.user !== "System")
-      .map((l) => l.user)
-  ).size;
+  // Compute Active Users using only the latest AUTH event per user within a recent window
+  const activeUniqueUsers = useMemo(() => {
+    const WINDOW_MINUTES = 120; // consider a user active only if last login is within 2 hours
+    const now = new Date();
+    const threshold = new Date(now.getTime() - WINDOW_MINUTES * 60 * 1000);
+
+    const seen = new Set<string>();
+    let count = 0;
+    for (const row of baseFilteredLogs) {
+      const user = row.user;
+      if (user === "System" || seen.has(user)) continue;
+      if (row.category !== "auth") continue; // we only decide on auth events
+      seen.add(user);
+      const isLogin = /login/i.test(row.action) && !/logout/i.test(row.action);
+      const ts = new Date(row.timestamp);
+      if (isLogin && ts >= threshold) count++;
+    }
+    return count;
+  }, [baseFilteredLogs]);
 
 return (
   <div className="px-4 py-6 md:px-8 lg:px-12 space-y-6">
@@ -813,3 +1012,5 @@ return (
   </div>
 );
 }
+
+

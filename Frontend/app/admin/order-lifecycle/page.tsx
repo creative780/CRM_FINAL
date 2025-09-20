@@ -1,13 +1,15 @@
-"use client";
-import { useEffect, useMemo, useState } from "react";
+﻿"use client";
+import { useEffect, useMemo, useState, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "../../components/Tabs";
 import { Button } from "../../components/Button";
 import DashboardNavbar from "@/app/components/navbar/DashboardNavbar";
 import { Toaster, toast } from "react-hot-toast";
 import Link from "next/link";
-
-/* ────────────────────────────────────────────────────────────────────────────
+import ProductSearchModal from "../../components/modals/ProductSearchModal";
+import ProductConfigModal from "../../components/modals/ProductConfigModal";
+import { BaseProduct, ConfiguredProduct } from "../../types/products";
+/* â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
    Stage components
 --------------------------------------------------------------------------- */
 import OrderIntakeForm from "../../components/order-stages/OrderIntakeForm";
@@ -17,7 +19,7 @@ import PrintingQAForm from "../../components/order-stages/PrintingQAForm";
 import ClientApprovalForm from "../../components/order-stages/ClientApprovalForm";
 import DeliveryProcessForm from "../../components/order-stages/DeliveryProcessForm";
 
-/* ────────────────────────────────────────────────────────────────────────────
+/* â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
    RBAC (role still used for badge and table route, but NOT for tab visibility)
 --------------------------------------------------------------------------- */
 type Role = "admin" | "sales" | "designer" | "production" | "delivery" | "finance";
@@ -36,14 +38,14 @@ function getUserRole(): Role {
   return known.includes(r as Role) ? (r as Role) : "sales";
 }
 
-/* Role → table route */
+/* Role â†’ table route */
 const TABLE_ROUTES: Partial<Record<Role, string>> = {
   sales: "/admin/order-lifecycle/table",
   production: "/admin/order-lifecycle/table/production",
   designer: "/admin/order-lifecycle/table/designer",
 };
 
-/* ────────────────────────────────────────────────────────────────────────────
+/* â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
    Stage registry
 --------------------------------------------------------------------------- */
 const STAGE_REGISTRY: Record<
@@ -61,13 +63,45 @@ const STAGE_REGISTRY: Record<
       setRiderPhoto: React.Dispatch<React.SetStateAction<File | null>>;
       handleUpload: () => Promise<void>;
       canGenerate: boolean;
+      onSaveDraft?: () => void | Promise<void>;
+      onSendToSales?: () => void | Promise<void>;
+      savingDraft?: boolean;
+      sendingToSales?: boolean;
+      selectedProducts?: ConfiguredProduct[];
+      onAddProduct?: () => void;
+      onRemoveProduct?: (id: string) => void;
+      onEditProduct?: (id: string) => void;
     }) => JSX.Element;
   }
 > = {
   orderIntake: {
     label: "Order Intake",
-    requiredFields: ["clientName", "specifications", "urgency"],
-    render: ({ formData, setFormData }) => <OrderIntakeForm formData={formData} setFormData={setFormData} />,
+    requiredFields: ["clientName", "specifications", "urgency", "products"],
+    render: ({
+      formData,
+      setFormData,
+      onSaveDraft,
+      onSendToSales,
+      savingDraft,
+      sendingToSales,
+      selectedProducts = [],
+      onAddProduct,
+      onRemoveProduct,
+      onEditProduct,
+    }) => (
+      <OrderIntakeForm
+        formData={formData}
+        setFormData={setFormData}
+        onSaveDraft={onSaveDraft}
+        onSendToSales={onSendToSales}
+        savingDraft={savingDraft}
+        sendingToSales={sendingToSales}
+        selectedProducts={selectedProducts}
+        onAddProduct={onAddProduct}
+        onRemoveProduct={onRemoveProduct}
+        onEditProduct={onEditProduct}
+      />
+    ),
   },
   quotation: {
     label: "Quotation & Pricing",
@@ -109,14 +143,18 @@ const STAGE_REGISTRY: Record<
   },
 };
 
-/* ────────────────────────────────────────────────────────────────────────────
+/* â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
    Component
 --------------------------------------------------------------------------- */
 export default function OrderLifecyclePage() {
-  const role = getUserRole();
+  // Avoid SSR/CSR hydration mismatch by deferring role resolution to client
+  const [role, setRole] = useState<Role>("sales");
+  useEffect(() => {
+    setRole(getUserRole());
+  }, []);
   const router = useRouter();
 
-  // ⬇⬇⬇ All roles see ALL stages (no role-based filtering)
+  // â¬‡â¬‡â¬‡ All roles see ALL stages (no role-based filtering)
   const visibleStageKeys: StageKey[] = useMemo(() => {
     const ORDER: StageKey[] = [
       "orderIntake",
@@ -142,9 +180,9 @@ export default function OrderLifecyclePage() {
 
   const [formData, setFormData] = useState<any>({
     clientName: "",
-    productType: "",
     specifications: "",
     urgency: "",
+    items: [],
     status: "New",
     rawMaterialCost: 0,
     labourCost: 0,
@@ -165,6 +203,89 @@ export default function OrderLifecyclePage() {
     deliveryStatus: "Dispatched",
   });
 
+  const [selectedProducts, setSelectedProducts] = useState<ConfiguredProduct[]>([]);
+  const [showSearchModal, setShowSearchModal] = useState(false);
+  const [showConfigModal, setShowConfigModal] = useState(false);
+  const [pendingBaseProduct, setPendingBaseProduct] = useState<BaseProduct | null>(null);
+  const [pendingInitialQty, setPendingInitialQty] = useState<number | undefined>(undefined);
+  const [pendingInitialAttributes, setPendingInitialAttributes] = useState<Record<string, string> | undefined>(undefined);
+  const [editingProductId, setEditingProductId] = useState<string | null>(null);
+  const handleAddProductClick = useCallback(() => {
+    setShowSearchModal(true);
+  }, []);
+
+  const resetPendingProduct = () => {
+    setPendingBaseProduct(null);
+    setPendingInitialQty(undefined);
+    setPendingInitialAttributes(undefined);
+    setEditingProductId(null);
+  };
+
+  const handlePickBaseProduct = useCallback((product: BaseProduct, qty = 1) => {
+    setPendingBaseProduct(product);
+    setPendingInitialQty(qty);
+    setPendingInitialAttributes(undefined);
+    setEditingProductId(null);
+    setShowSearchModal(false);
+    setShowConfigModal(true);
+  }, []);
+
+  const handleConfirmProduct = useCallback((configured: ConfiguredProduct) => {
+    setSelectedProducts((prev) => {
+      const index = prev.findIndex((item) => item.id === configured.id);
+      const next = index >= 0 ? prev.map((item, idx) => (idx === index ? configured : item)) : [...prev, configured];
+      setFormData((prevData: any) => ({ ...prevData, items: serializeSelectedProducts(next) }));
+      return next;
+    });
+    // Close the modal and reset state
+    setShowConfigModal(false);
+    resetPendingProduct();
+  }, []);
+
+  const handleRemoveProduct = useCallback((id: string) => {
+    setSelectedProducts((prev) => {
+      const next = prev.filter((item) => item.id !== id);
+      setFormData((prevData: any) => ({ ...prevData, items: serializeSelectedProducts(next) }));
+      return next;
+    });
+  }, []);
+
+  const handleEditProduct = useCallback((id: string) => {
+    const existing = selectedProducts.find((item) => item.id === id);
+    if (!existing) return;
+    setPendingBaseProduct({
+      id: existing.productId,
+      name: existing.name,
+      imageUrl: existing.imageUrl,
+    });
+    setPendingInitialQty(existing.quantity);
+    setPendingInitialAttributes(existing.attributes);
+    setEditingProductId(existing.id);
+    setShowConfigModal(true);
+  }, [selectedProducts]);
+
+  const handleCloseSearchModal = useCallback(() => {
+    setShowSearchModal(false);
+  }, []);
+
+  const handleCloseConfigModal = useCallback(() => {
+    setShowConfigModal(false);
+    resetPendingProduct();
+  }, []);
+
+  const handleBackToSearch = useCallback(() => {
+    setShowConfigModal(false);
+    setShowSearchModal(true);
+    // Keep the pending product data for when user comes back
+  }, []);
+  const serializeSelectedProducts = (items: ConfiguredProduct[] = selectedProducts) =>
+    items.map((item) => ({
+      product_id: item.productId,
+      name: item.name,
+      quantity: item.quantity,
+      attributes: item.attributes,
+      sku: item.sku,
+    }));
   const generateCode = async () => {
     const code = Math.floor(100000 + Math.random() * 900000).toString();
     setDeliveryCode(code);
@@ -256,9 +377,9 @@ export default function OrderLifecyclePage() {
           headers,
           body: JSON.stringify({
             clientName: formData.clientName,
-            productType: formData.productType,
             specs: formData.specifications,
             urgency: formData.urgency,
+            items: serializeSelectedProducts(),
           }),
         });
         if (!resp.ok) throw new Error(`Create failed (${resp.status})`);
@@ -325,6 +446,19 @@ export default function OrderLifecyclePage() {
         }
       }
 
+      if (!orderId) throw new Error("Order identifier missing after save");
+
+      const baseUpdate = await fetch(`${apiBase}/api/orders/${orderId}`, {
+        method: "PATCH",
+        headers,
+        body: JSON.stringify({
+          client_name: formData.clientName,
+          specs: formData.specifications,
+          urgency: formData.urgency,
+          items: serializeSelectedProducts(),
+        }),
+      });
+      if (!baseUpdate.ok) throw new Error(`Update failed (${baseUpdate.status})`);
       toast.success("Order saved successfully!");
 
       // After final stage, redirect user and flash confirmation
@@ -344,12 +478,107 @@ export default function OrderLifecyclePage() {
     }
   };
 
+  const [busyDraft, setBusyDraft] = useState(false);
+  const [busySend, setBusySend] = useState(false);
+
+  const ensureOrderExists = async (): Promise<number | null> => {
+    try {
+      const apiBase = process.env.NEXT_PUBLIC_API_BASE || "http://localhost:8000";
+      const token = typeof window !== "undefined" ? localStorage.getItem("admin_token") : null;
+      const headers: any = { "Content-Type": "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}) };
+
+      let orderId = formData._orderId;
+      if (!orderId) {
+        const resp = await fetch(`${apiBase}/api/orders`, {
+          method: "POST",
+          headers,
+          body: JSON.stringify({
+            clientName: formData.clientName,
+            specs: formData.specifications,
+            urgency: formData.urgency,
+            items: serializeSelectedProducts(),
+          }),
+        });
+        if (!resp.ok) throw new Error(`Create failed (${resp.status})`);
+        const created = await resp.json();
+        orderId = created.id;
+        setFormData((p: any) => ({ ...p, _orderId: orderId }));
+      }
+      return orderId || null;
+    } catch (e: any) {
+      toast.error(e?.message || "Failed to save draft");
+      return null;
+    }
+  };
+
+  const handleSaveDraft = async () => {
+    if (busyDraft) return;
+    setBusyDraft(true);
+    try {
+      const apiBase = process.env.NEXT_PUBLIC_API_BASE || "http://localhost:8000";
+      const token = typeof window !== "undefined" ? localStorage.getItem("admin_token") : null;
+      const headers: any = { "Content-Type": "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}) };
+
+      const orderId = await ensureOrderExists();
+      if (!orderId) return;
+
+      // Best-effort sync of basic fields if order already existed
+      const resp = await fetch(`${apiBase}/api/orders/${orderId}`, {
+        method: "PATCH",
+        headers,
+        body: JSON.stringify({
+          client_name: formData.clientName,
+          specs: formData.specifications,
+          urgency: formData.urgency,
+          status: "new",
+          items: serializeSelectedProducts(),
+        }),
+      });
+      if (!resp.ok) throw new Error(`Update failed (${resp.status})`);
+      toast.success("Draft saved");
+    } catch (e: any) {
+      toast.error(e?.message || "Failed to save draft");
+    } finally {
+      setBusyDraft(false);
+    }
+  };
+
+  const handleSendToSales = async () => {
+    if (busySend) return;
+    setBusySend(true);
+    try {
+      const apiBase = process.env.NEXT_PUBLIC_API_BASE || "http://localhost:8000";
+      const token = typeof window !== "undefined" ? localStorage.getItem("admin_token") : null;
+      const headers: any = { "Content-Type": "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}) };
+
+      const orderId = await ensureOrderExists();
+      if (!orderId) return;
+
+      // Move to quotation stage (Sales)
+      const resp = await fetch(`${apiBase}/api/orders/${orderId}`, {
+        method: "PATCH",
+        headers,
+        body: JSON.stringify({ stage: "quotation", payload: {} }),
+      });
+      if (!resp.ok) throw new Error(`Stage update failed (${resp.status})`);
+      toast.success("Sent to Sales");
+    } catch (e: any) {
+      toast.error(e?.message || "Failed to send to Sales");
+    } finally {
+      setBusySend(false);
+    }
+  };
+
   const validateCurrentStage = () => {
     const stageKey = visibleStageKeys[currentIndex];
     if (!stageKey) return true;
     const required = STAGE_REGISTRY[stageKey].requiredFields || [];
     const missing: string[] = [];
     for (let field of required) {
+      if (field === "products") {
+        if (selectedProducts.length === 0) missing.push(field);
+        continue;
+      }
       const value = formData[field];
       const isMissing =
         value === null ||
@@ -482,7 +711,16 @@ export default function OrderLifecyclePage() {
                   setRiderPhoto,
                   handleUpload,
                   canGenerate,
+                  onSaveDraft: handleSaveDraft,
+                  onSendToSales: handleSendToSales,
+                  savingDraft: busyDraft,
+                  sendingToSales: busySend,
+                  selectedProducts,
+                  onAddProduct: handleAddProductClick,
+                  onRemoveProduct: handleRemoveProduct,
+                  onEditProduct: handleEditProduct,
                 })}
+
 
                 {/* Navigation Buttons */}
                 <div className="flex justify-between items-center mt-6 max-w-md mx-auto gap-4">
@@ -491,7 +729,7 @@ export default function OrderLifecyclePage() {
                     className="w-full flex items-center justify-center gap-2 border border-gray-300 text-black transition-all duration-200 hover:bg-red-900 hover:text-white"
                     onClick={() => setCurrentIndex((prev) => Math.max(prev - 1, 0))}
                   >
-                    ← Back
+                    â† Back
                   </Button>
 
                   {currentIndex < stages.length - 1 ? (
@@ -501,14 +739,14 @@ export default function OrderLifecyclePage() {
                         if (validateCurrentStage()) setCurrentIndex((prev) => prev + 1);
                       }}
                     >
-                      Next →
+                      Next â†’
                     </Button>
                   ) : (
                     <Button
                       className="w-full flex items-center justify-center gap-2 bg-[#891F1A] text-white hover:bg-red-900 transition-all duration-200"
                       onClick={handleSaveOrder}
                     >
-                      ✅ Save Order
+                      âœ… Save Order
                     </Button>
                   )}
                 </div>
@@ -517,6 +755,50 @@ export default function OrderLifecyclePage() {
           </TabsContent>
         ))}
       </Tabs>
+
+      <ProductSearchModal
+        open={showSearchModal}
+        onClose={handleCloseSearchModal}
+        onPickBaseProduct={handlePickBaseProduct}
+      />
+
+      <ProductConfigModal
+        open={showConfigModal}
+        onClose={handleCloseConfigModal}
+        baseProduct={pendingBaseProduct}
+        onConfirm={handleConfirmProduct}
+        initialQty={pendingInitialQty || 1}
+        initialAttributes={pendingInitialAttributes || {}}
+        editingProductId={editingProductId ?? undefined}
+        onBack={handleBackToSearch}
+      />
     </div>
   );
 }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

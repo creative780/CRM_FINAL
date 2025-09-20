@@ -14,6 +14,8 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 from drf_spectacular.utils import extend_schema
 
+from app.common.net_utils import get_client_ip, resolve_client_hostname
+
 from accounts.permissions import RolePermission
 from monitoring.models import Employee as MonitoringEmployee
 
@@ -40,6 +42,52 @@ def _format_location(metadata: dict[str, object]) -> str:
         return ''
 
     return f"{lat}, {lng}"
+
+
+def _collect_device_meta(request, payload: dict | None = None) -> dict[str, object | None]:
+    """Capture device identifiers and resolve the hostname for the client."""
+
+    payload = payload or {}
+
+    ip_candidate = (payload.get('ip_address') or get_client_ip(request) or '').strip()
+    ip_address = ip_candidate or None
+
+    device_id_candidate = (
+        payload.get('device_id')
+        or request.headers.get('X-Device-Id')
+        or request.META.get('HTTP_X_DEVICE_ID')
+    )
+    device_id = str(device_id_candidate).strip() if device_id_candidate else ''
+    device_id = device_id or None
+
+    user_agent_candidate = (
+        payload.get('device_info')
+        or request.headers.get('User-Agent')
+        or request.META.get('HTTP_USER_AGENT')
+        or ''
+    )
+    device_info = str(user_agent_candidate)[:255].strip()
+    device_info = device_info or None
+
+    # Prefer explicit device name (header/payload) over reverse DNS
+    device_name_candidate = (
+        (payload.get('device_name') if payload else None)
+        or request.headers.get('X-Device-Name')
+        or request.META.get('HTTP_X_DEVICE_NAME')
+        or None
+    )
+    if device_name_candidate is not None:
+        device_name = str(device_name_candidate).strip()[:255] or None
+    else:
+        device_name = resolve_client_hostname(ip_address)
+
+    return {
+        'ip_address': ip_address,
+        'device_id': device_id,
+        'device_info': device_info,
+        'device_name': device_name,
+    }
+
 
 User = get_user_model()
 
@@ -105,6 +153,15 @@ class AttendanceCheckInView(APIView):
 
         data = serializer.validated_data
         metadata = build_attendance_metadata(request, data)
+        device_meta = _collect_device_meta(request, data)
+        metadata.update(
+            {
+                'ip_address': device_meta.get('ip_address'),
+                'device_id': device_meta.get('device_id') or '',
+                'device_info': device_meta.get('device_info') or '',
+                'device_name': device_meta.get('device_name'),
+            }
+        )
 
         attendance = Attendance.objects.create(
             employee=request.user,
@@ -159,7 +216,17 @@ class AttendanceCheckOutView(APIView):
                 attendance.notes = data['notes']
 
         metadata = build_attendance_metadata(request, data)
+        device_meta = _collect_device_meta(request, data)
+
+        for field in ('ip_address', 'device_id', 'device_info', 'device_name'):
+            value = device_meta.get(field)
+            if field in ('device_id', 'device_info') and value is None:
+                value = ''
+            setattr(attendance, field, value)
+
         for field, value in metadata.items():
+            if field in ('ip_address', 'device_id', 'device_info', 'device_name'):
+                continue
             if value not in (None, ''):
                 setattr(attendance, field, value)
 
@@ -183,19 +250,23 @@ class AttendanceContextView(APIView):
     )
     def get(self, request):
         metadata = build_attendance_metadata(request)
+        device_meta = _collect_device_meta(request)
 
-        ip_address = (metadata.get('ip_address') or '').strip()
-        device_id = (metadata.get('device_id') or '').strip()
-        device_name = (metadata.get('device_info') or '').strip()
+        ip_address = (device_meta.get('ip_address') or metadata.get('ip_address') or '').strip()
+        device_id = (device_meta.get('device_id') or metadata.get('device_id') or '').strip()
+        device_info = device_meta.get('device_info') or metadata.get('device_info') or ''
+        device_name = (device_meta.get('device_name') or '').strip()
 
         location = _format_location(metadata)
+
+        fallback_device_name = device_name or device_id
 
         return Response(
             {
                 'ip': ip_address,
                 'location': location,
                 'deviceId': device_id,
-                'deviceName': device_name or device_id,
+                'deviceName': fallback_device_name,
             }
         )
 

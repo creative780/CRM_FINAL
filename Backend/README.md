@@ -48,3 +48,31 @@ Docs
 - OpenAPI schema: /api/schema/
 - Swagger UI: /api/docs/
 - Health: /healthz
+
+Activity Logs Service
+
+- App: `activity_log`
+- Endpoints:
+  - POST `/api/activity-logs/ingest` (HMAC)
+  - GET `/api/activity-logs/` (cursor pagination; JWT)
+  - GET `/api/activity-logs/{id}` (JWT)
+  - POST `/api/activity-logs/export` (JWT, async)
+  - GET `/api/activity-logs/exports/{job_id}` (JWT)
+  - GET `/api/activity-logs/metrics` (JWT)
+
+Docker Compose (web, db, redis, celery, celery-beat)
+
+```
+docker compose -f Backend/docker-compose.yml up --build
+```
+
+Environment
+
+- `DJANGO_SECRET_KEY`
+- `DATABASE_URL`
+- `REDIS_URL`
+- `CORS_ALLOWED_ORIGINS`
+
+SDK
+
+- Python client at `Backend/activity_log/clients/python/activity_logs_client.py`

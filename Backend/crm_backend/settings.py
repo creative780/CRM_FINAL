@@ -45,6 +45,7 @@ INSTALLED_APPS = [
     'django.contrib.sessions',
     'django.contrib.messages',
     'django.contrib.staticfiles',
+    'django.contrib.postgres',
 
     # Third-party
     'rest_framework',
@@ -66,6 +67,7 @@ INSTALLED_APPS = [
     'attendance',
     'audit',
     'chat',
+    'activity_log',
 ]
 
 MIDDLEWARE = [
@@ -186,5 +188,38 @@ SPECTACULAR_SETTINGS = {
 }
 
 # CORS
-CORS_ALLOWED_ORIGINS = env.list('CORS_ALLOWED_ORIGINS', default=['http://localhost:3000'])
+CORS_ALLOWED_ORIGINS = env.list('CORS_ALLOWED_ORIGINS', default=['http://localhost:3000', 'http://127.0.0.1:3000'])
 CORS_ALLOW_CREDENTIALS = True
+# Allow custom device header used by the frontend when checking in/out
+from corsheaders.defaults import default_headers
+CORS_ALLOW_HEADERS = list(default_headers) + [
+    'x-device-id',
+    'x-device-name',
+    'authorization',
+    'x-log-key',
+    'x-log-signature',
+    'x-request-id',
+]
+
+# Redis cache (for throttling/metrics)
+CACHES = {
+    'default': env.cache('REDIS_URL', default='locmemcache://')
+}
+
+# DRF throttling: basic defaults and burst control
+REST_FRAMEWORK['DEFAULT_THROTTLE_CLASSES'] = [
+    'rest_framework.throttling.AnonRateThrottle',
+    'rest_framework.throttling.UserRateThrottle',
+]
+REST_FRAMEWORK['DEFAULT_THROTTLE_RATES'] = {
+    'anon': env('THROTTLE_ANON', default='100/min'),
+    'user': env('THROTTLE_USER', default='1000/min'),
+}
+
+# Celery
+CELERY_BROKER_URL = env('CELERY_BROKER_URL', default=env('REDIS_URL', default='redis://localhost:6379/0'))
+CELERY_RESULT_BACKEND = env('CELERY_RESULT_BACKEND', default=CELERY_BROKER_URL)
+CELERY_TASK_ALWAYS_EAGER = env.bool('CELERY_TASK_ALWAYS_EAGER', default=False)
+
+# Exports dir
+EXPORTS_DIR = env('EXPORTS_DIR', default=str(BASE_DIR / 'media' / 'exports'))

@@ -1,4 +1,4 @@
-export type Role = 'admin' | 'sales' | 'designer' | 'production' | 'delivery' | 'finance';
+﻿export type Role = "admin" | "sales" | "designer" | "production" | "delivery" | "finance";
 
 export interface UserInfo {
   username: string;
@@ -20,7 +20,7 @@ export interface EmployeeActivity {
   name: string;
   email: string;
   department: string;
-  status: 'online' | 'idle' | 'offline' | string;
+  status: "online" | "idle" | "offline" | string;
   keystrokeCount: number;
   mouseClicks: number;
   activityTimeline: number[] | string[];
@@ -36,15 +36,23 @@ export interface InventoryItem {
   unit: string;
 }
 
+export interface OrderItem {
+  product_id?: string;
+  name: string;
+  quantity: number;
+  attributes?: Record<string, string>;
+  sku?: string;
+}
+
 export interface Order {
   id: number;
   order_id: string;
   client_name: string;
-  product_type: string;
   specs?: string;
   urgency?: string;
   status: string;
   stage: string;
+  items?: OrderItem[];
 }
 
 export interface OrderQuotationPayload { labour_cost?: number; finishing_cost?: number; paper_cost?: number; design_cost?: number; }
@@ -54,16 +62,15 @@ export interface OrderApprovalPayload { client_approval_files?: string[]; approv
 export interface OrderDeliveryPayload { delivery_code?: string; delivered_at?: string; rider_photo_path?: string; delivery_status?: string; }
 
 export type OrderStagePayloads =
-  | { stage: 'quotation'; payload: OrderQuotationPayload }
-  | { stage: 'design'; payload: OrderDesignPayload }
-  | { stage: 'printing'; payload: OrderPrintPayload }
-  | { stage: 'approval'; payload: OrderApprovalPayload }
-  | { stage: 'delivery'; payload: OrderDeliveryPayload };
+  | { stage: "quotation"; payload: OrderQuotationPayload }
+  | { stage: "design"; payload: OrderDesignPayload }
+  | { stage: "printing"; payload: OrderPrintPayload }
+  | { stage: "approval"; payload: OrderApprovalPayload }
+  | { stage: "delivery"; payload: OrderDeliveryPayload };
 
 export interface Notification {
   id: number;
-  status: 'unread' | 'read';
+  status: "unread" | "read";
   message: string;
   created_at: string;
 }
-

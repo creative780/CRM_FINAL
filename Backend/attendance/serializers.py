@@ -5,6 +5,7 @@ from .models import Attendance, AttendanceRule
 class AttendanceSerializer(serializers.ModelSerializer):
     employee_name = serializers.SerializerMethodField()
     duration_display = serializers.CharField(read_only=True)
+    device_name = serializers.SerializerMethodField()
 
     class Meta:
         model = Attendance
@@ -24,6 +25,7 @@ class AttendanceSerializer(serializers.ModelSerializer):
             'ip_address',
             'device_id',
             'device_info',
+            'device_name',
             'duration_display',
             'created_at',
             'updated_at',
@@ -32,6 +34,13 @@ class AttendanceSerializer(serializers.ModelSerializer):
 
     def get_employee_name(self, obj):
         return obj.employee.get_full_name() or obj.employee.username
+
+    def get_device_name(self, obj):
+        name = (obj.device_name or '').strip()
+        if name:
+            return name
+        # Do not expose device_id or user-agent as the display name
+        return None
 
 
 class CheckInSerializer(serializers.Serializer):
@@ -42,6 +51,7 @@ class CheckInSerializer(serializers.Serializer):
     ip_address = serializers.CharField(required=False, allow_blank=True)
     device_id = serializers.CharField(required=False, allow_blank=True)
     device_info = serializers.CharField(required=False, allow_blank=True)
+    device_name = serializers.CharField(required=False, allow_blank=True)
 
 
 class CheckOutSerializer(serializers.Serializer):
@@ -52,6 +62,7 @@ class CheckOutSerializer(serializers.Serializer):
     ip_address = serializers.CharField(required=False, allow_blank=True)
     device_id = serializers.CharField(required=False, allow_blank=True)
     device_info = serializers.CharField(required=False, allow_blank=True)
+    device_name = serializers.CharField(required=False, allow_blank=True)
 
 
 class AttendanceRuleSerializer(serializers.ModelSerializer):

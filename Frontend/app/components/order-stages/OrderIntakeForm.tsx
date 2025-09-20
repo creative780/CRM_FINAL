@@ -1,6 +1,9 @@
-"use client";
+﻿"use client";
 
-import React, { useCallback, useRef, useState, useEffect } from "react";
+import React, { useCallback, useState } from "react";
+import { Plus } from "lucide-react";
+import SelectedProductsList from "@/app/components/products/SelectedProductsList";
+import { ConfiguredProduct } from "@/app/types/products";
 
 /**
  * Order intake form component used to collect the details necessary to create
@@ -24,7 +27,6 @@ export type Row = {
   status: Status;
 };
 
-export type IntakeProduct = { name: string; quantity: number };
 type UploadMeta = { name: string; size: number; type: string; url: string };
 
 export interface OrderIntakeFormValues {
@@ -34,13 +36,10 @@ export interface OrderIntakeFormValues {
   email: string;
   address: string;
   specifications: string;
-  productType: string;
   urgency: Urgency;
   status: Status;
   orderId: string;
-  products: IntakeProduct[];
   orderDetails: string;
-  showProductDropdown: boolean;
   previewDate: string;
   previewTime: string;
   // Allow additional keys for uncontrolled updates
@@ -57,6 +56,15 @@ type Props = {
   setFormData?: React.Dispatch<React.SetStateAction<any>>;
   /** Require that products/files are selected before allowing save. */
   requireProductsAndFiles?: boolean;
+  /** Optional: show action buttons inside the form */
+  onSaveDraft?: () => void | Promise<void>;
+  onSendToSales?: () => void | Promise<void>;
+  savingDraft?: boolean;
+  sendingToSales?: boolean;
+  selectedProducts?: ConfiguredProduct[];
+  onAddProduct?: () => void;
+  onRemoveProduct?: (id: string) => void;
+  onEditProduct?: (id: string) => void;
 };
 
 /* ===== Helpers ===== */
@@ -67,37 +75,6 @@ const toLocalHM = (d: Date) =>
 
 /* ===== Mini UI primitives ===== */
 const Separator = () => <div className="h-px w-full bg-gray-200" />;
-
-/* ===== Grouped Product list (sample) ===== */
-const GROUPED_PRODUCTS: Record<string, string[]> = {
-  A: ["Acrylic Keychain", "Air Freshener"],
-  B: ["Brochure", "Business Card"],
-  C: ["Canvas Print", "Custom Calendar"],
-  D: ["Desk Organizer", "Door Hanger"],
-  E: ["Envelope", "Event Pass"],
-  F: ["Flyer", "Foam Board"],
-  G: ["Greeting Card", "Glass Trophy"],
-  H: ["Hand Fan", "Hologram Sticker"],
-  I: ["Invitation Card", "ID Badge"],
-  J: ["Journal", "Jigsaw Puzzle"],
-  K: ["Key Holder", "Kraft Bag"],
-  L: ["Label Sticker", "Lanyard"],
-  M: ["Mug", "Mouse Pad"],
-  N: ["Notebook", "Name Badge"],
-  O: ["Office Stamp", "Outdoor Banner"],
-  P: ["Pen", "Poster"],
-  Q: ["Quote Card", "Quick Guide"],
-  R: ["Rollup Banner", "Receipt Book"],
-  S: ["Sticker", "Standee"],
-  T: ["T-Shirt", "Tent Card"],
-  U: ["Umbrella", "USB Drive"],
-  V: ["Voucher", "Vinyl Print"],
-  W: ["Wall Clock", "Water Bottle"],
-  X: ["X-Banner", "X-Ray Folder"],
-  Y: ["Yoga Mat", "Yard Sign"],
-  Z: ["Zipper Pouch", "Z-Fold Brochure"],
-};
-
 /**
  * Creates the default values for a new order intake.  Useful when
  * resetting the form after saving or when initializing controlled form
@@ -112,13 +89,10 @@ export const createOrderIntakeDefaults = (): OrderIntakeFormValues => {
     email: "",
     address: "",
     specifications: "",
-    productType: "",
     urgency: "Normal",
     status: "New",
     orderId: `ORD-${Math.random().toString(36).slice(2, 8).toUpperCase()}`,
-    products: [],
     orderDetails: "",
-    showProductDropdown: false,
     previewDate: toLocalYMD(now),
     previewTime: toLocalHM(now),
   };
@@ -129,8 +103,15 @@ const OrderIntakeForm: React.FC<Props> = ({
   formData: controlledFormData,
   setFormData: controlledSetFormData,
   requireProductsAndFiles = false,
+  onSaveDraft,
+  onSendToSales,
+  savingDraft = false,
+  sendingToSales = false,
+  selectedProducts = [],
+  onAddProduct = () => {},
+  onRemoveProduct = () => {},
+  onEditProduct = () => {},
 }) => {
-  const productDropdownRef = useRef<HTMLDivElement>(null);
   // Determine if the form is controlled
   const isControlled = controlledFormData !== undefined && controlledSetFormData !== undefined;
   const [internalFormData, setInternalFormData] = useState<OrderIntakeFormValues>(() =>
@@ -151,22 +132,7 @@ const OrderIntakeForm: React.FC<Props> = ({
     [isControlled, controlledSetFormData],
   );
 
-  const [searchText, setSearchText] = useState("");
-  const [addingCustomProduct, setAddingCustomProduct] = useState(false);
-  const [customProductName, setCustomProductName] = useState("");
-  const [customProductQty, setCustomProductQty] = useState(1);
   const [intakeFiles, setIntakeFiles] = useState<UploadMeta[]>([]);
-
-  useEffect(() => {
-    const handleClickOutside = (event: MouseEvent) => {
-      if (productDropdownRef.current && !productDropdownRef.current.contains(event.target as Node)) {
-        setFormData((prev: any) => ({ ...prev, showProductDropdown: false }));
-        setAddingCustomProduct(false);
-      }
-    };
-    document.addEventListener("mousedown", handleClickOutside);
-    return () => document.removeEventListener("mousedown", handleClickOutside);
-  }, [setFormData]);
 
   /** ===== Files ===== */
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -198,40 +164,15 @@ const OrderIntakeForm: React.FC<Props> = ({
   };
 
   /** ===== Products ===== */
-  const handleProductToggle = (product: string) => {
-    const current = formData.products || [];
-    const isSelected = current.some((p: IntakeProduct) => p.name === product);
-    const updated = isSelected
-      ? current.filter((p: IntakeProduct) => p.name !== product)
-      : [...current, { name: product, quantity: 1 }];
-    setFormData((prev: any) => ({ ...prev, products: updated }));
-    setSearchText("");
-  };
-
-  const handleQuantityChange = (product: string, newQty: number) => {
-    if (newQty < 1) return;
-    setFormData((prev: any) => ({
-      ...prev,
-      products: (prev.products || []).map((p: IntakeProduct) => (p.name === product ? { ...p, quantity: newQty } : p)),
-    }));
-  };
-
-  const flatProductList = Object.values(GROUPED_PRODUCTS).flat();
-  const exactMatch = flatProductList.some((p) => p.toLowerCase() === searchText.toLowerCase());
-  const filteredProducts = Object.entries(GROUPED_PRODUCTS).flatMap(([_, products]) =>
-    products.filter((product) => product.toLowerCase().includes(searchText.toLowerCase())),
-  );
+  const hasAtLeastOneProduct = Array.isArray(selectedProducts) && selectedProducts.length > 0;
 
   /** ===== Validation ===== */
-  const trimmedProductType = typeof formData.productType === "string" ? formData.productType.trim() : "";
-  const hasAtLeastOneProduct = Array.isArray(formData.products) && formData.products.length > 0;
   const hasAtLeastOneFile = intakeFiles.length > 0;
-  const hasProductDetails = trimmedProductType.length > 0 || hasAtLeastOneProduct;
-
-  /** ===== Save ===== */
+  const hasProductDetails = hasAtLeastOneProduct;
+/** ===== Save ===== */
   const handleSave = () => {
     if (!hasProductDetails) {
-      alert("Please enter a product type or add at least one product before saving.");
+      alert("Please add at least one product before saving.");
       return;
     }
     if (requireProductsAndFiles && !hasAtLeastOneFile) {
@@ -243,13 +184,9 @@ const OrderIntakeForm: React.FC<Props> = ({
     const date = toLocalYMD(now);
     const time = toLocalHM(now);
 
-    const productType = trimmedProductType;
-    const prods = (formData.products || []) as IntakeProduct[];
     const titleFromProducts =
-      productType && productType.length > 0
-        ? productType
-        : prods.length > 0
-        ? prods.map((p) => (p.quantity ? `${p.quantity} × ${p.name}` : p.name)).join(", ")
+      selectedProducts.length > 0
+        ? selectedProducts.map((p) => `${p.quantity} x ${p.name}`).join(", ")
         : "Custom Order";
 
     const row: Row = {
@@ -263,11 +200,8 @@ const OrderIntakeForm: React.FC<Props> = ({
 
     onSaved(row);
 
-    // reset for next time
     setFormData(createOrderIntakeDefaults());
     setIntakeFiles([]);
-    setSearchText("");
-    setAddingCustomProduct(false);
   };
 
   return (
@@ -318,147 +252,35 @@ const OrderIntakeForm: React.FC<Props> = ({
           />
         </div>
 
-        {/* Product(s) */}
-        <div className="flex flex-col relative md:col-span-2" ref={productDropdownRef}>
-          <label className="text-sm font-medium text-gray-700 mb-1">Product(s)</label>
-
-          {/* Selected tags */}
-          <div className="flex flex-wrap gap-2 mb-2">
-            {(formData.products || []).map((product: IntakeProduct, idx: number) => (
-              <div key={product.name} className="flex items-center bg-gray-200 rounded-full px-3 py-1 text-sm">
-                {product.name} ({product.quantity})
-                <button
-                  onClick={() =>
-                    setFormData({
-                      ...formData,
-                      products: (formData.products as IntakeProduct[]).filter((_: any, i: number) => i !== idx),
-                    })
-                  }
-                  className="ml-2 text-gray-500 hover:text-black"
-                >
-                  ✕
-                </button>
-              </div>
-            ))}
+        {/* Products */}
+        <div className="md:col-span-2 space-y-3">
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <label className="text-sm font-medium text-gray-700">Products</label>
+              <p className="text-xs text-gray-500">Search, configure, and add one or more products to this order.</p>
+            </div>
+            <button
+              type="button"
+              onClick={onAddProduct}
+              className="mt-2 inline-flex items-center justify-center gap-2 rounded-lg bg-[#891F1A] px-3 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-[#6f1814] sm:mt-0"
+            >
+              <Plus className="h-4 w-4" />
+              Add Product
+            </button>
           </div>
 
-          <input
-            type="text"
-            placeholder="Type to search..."
-            value={searchText}
-            onChange={(e) => {
-              setSearchText(e.target.value);
-              setFormData({ ...formData, showProductDropdown: true });
-            }}
-            onFocus={() => setFormData({ ...formData, showProductDropdown: true })}
-            onKeyDown={(e) => {
-              if (e.key === "Backspace" && searchText === "") {
-                const current = formData.products || [];
-                if (current.length > 0) setFormData({ ...formData, products: current.slice(0, -1) });
-              }
-            }}
-            className="w-full border border-gray-300 rounded px-3 py-2 focus:outline-none focus:ring-2 focus:ring-black"
-          />
-
-          {/* Dropdown */}
-          {formData.showProductDropdown && (
-            <div className="absolute top-full left-0 w-full mt-1 z-10 bg-white border border-gray-300 rounded shadow max-h-60 overflow-y-auto">
-              {filteredProducts.map((product) => {
-                const selected = (formData.products as IntakeProduct[] | undefined)?.find((p) => p.name === product);
-                return (
-                  <div key={product} className="flex items-center gap-2 px-4 py-2 hover:bg-gray-100 text-sm">
-                    <input
-                      type="checkbox"
-                      checked={!!selected}
-                      onChange={() => handleProductToggle(product)}
-                      className="cursor-pointer"
-                    />
-                    <span className="w-6 h-6 rounded bg-gray-200 inline-flex items-center justify-center text-[10px]">🧾</span>
-                    <span className="flex-1">{product}</span>
-                    {selected && (
-                      <input
-                        type="number"
-                        min={1}
-                        value={selected.quantity}
-                        onClick={(e) => e.stopPropagation()}
-                        onChange={(e) => handleQuantityChange(product, parseInt(e.target.value))}
-                        className="w-16 border px-1 py-0.5 rounded text-sm"
-                      />
-                    )}
-                  </div>
-                );
-              })}
-
-              {!!searchText && !exactMatch && !addingCustomProduct && (
-                <div
-                  onClick={() => {
-                    setCustomProductName(searchText);
-                    setAddingCustomProduct(true);
-                  }}
-                  className="px-4 py-2 text-blue-600 hover:bg-gray-100 text-sm cursor-pointer border-t border-gray-100"
-                >
-                  ➕ Add "{searchText}" as a custom product
-                </div>
-              )}
-
-              {addingCustomProduct && (
-                <div className="px-4 py-3 bg-gray-50 border-t border-gray-200 space-y-2 text-sm">
-                  <div className="flex items-center gap-2">
-                    <span className="text-gray-700">Custom Product:</span>
-                    <strong>{customProductName}</strong>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <label htmlFor="qty">Qty:</label>
-                    <input
-                      id="qty"
-                      type="number"
-                      min={1}
-                      value={customProductQty}
-                      onChange={(e) => setCustomProductQty(parseInt(e.target.value))}
-                      className="w-16 border px-2 py-1 rounded text-sm"
-                    />
-                  </div>
-                  <div className="flex gap-2">
-                    <button
-                      onClick={() => {
-                        const current = (formData.products || []) as IntakeProduct[];
-                        const isDup = current.some((p) => p.name === customProductName);
-                        if (!isDup) {
-                          setFormData({
-                            ...formData,
-                            products: [...current, { name: customProductName, quantity: customProductQty }],
-                          });
-                        }
-                        setAddingCustomProduct(false);
-                        setSearchText("");
-                      }}
-                      className="px-3 py-1 bg-green-600 text-white rounded text-xs"
-                    >
-                      Add
-                    </button>
-                    <button
-                      onClick={() => setAddingCustomProduct(false)}
-                      className="px-3 py-1 bg-[#891F1A] text-white rounded text-xs"
-                    >
-                      Cancel
-                    </button>
-                  </div>
-                </div>
-              )}
+          {hasAtLeastOneProduct ? (
+            <SelectedProductsList
+              items={selectedProducts}
+              onRemove={onRemoveProduct}
+              onEdit={onEditProduct}
+              className="pt-1"
+            />
+          ) : (
+            <div className="rounded-xl border border-dashed border-gray-300 bg-gray-50 px-4 py-6 text-center text-sm text-gray-500">
+              No products added yet. Use the button above to add items.
             </div>
           )}
-        </div>
-
-        {/* Product Type */}
-        <div className="flex flex-col md:col-span-2">
-          <label className="text-sm font-medium text-gray-700 mb-1">Product Type</label>
-          <input
-            type="text"
-            value={formData.productType ?? ""}
-            onChange={(e) => setFormData({ ...formData, productType: e.target.value })}
-            placeholder="e.g. Brochure, Custom Print..."
-            className="w-full border border-gray-300 rounded px-3 py-2 focus:outline-none focus:ring-2 focus:ring-black"
-          />
         </div>
 
         {/* Phone */}
@@ -545,8 +367,52 @@ const OrderIntakeForm: React.FC<Props> = ({
           />
         </div>
       </div>
+
+      {(onSaveDraft || onSendToSales) && (
+        <div className="pt-4 mt-2 border-t flex justify-end gap-3">
+          {onSaveDraft && (
+            <button
+              type="button"
+              onClick={() => onSaveDraft()}
+              disabled={!!savingDraft}
+              className="px-4 py-2 rounded border border-gray-300 text-sm hover:bg-gray-50 disabled:opacity-60"
+            >
+              {savingDraft ? "Saving..." : "Save as Draft"}
+            </button>
+          )}
+          {onSendToSales && (
+            <button
+              type="button"
+              onClick={() => onSendToSales()}
+              disabled={!!sendingToSales}
+              className="px-4 py-2 rounded bg-[#891F1A] text-white text-sm hover:bg-red-800 disabled:opacity-60"
+            >
+              {sendingToSales ? "Sending..." : "Send to Sales"}
+            </button>
+          )}
+        </div>
+      )}
     </div>
   );
 };
 
 export default OrderIntakeForm;
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

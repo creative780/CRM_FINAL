@@ -31,6 +31,33 @@ const LoginPage = () => {
   const formRef = useRef<HTMLFormElement | null>(null);
   const busyRef = useRef(false);
 
+  // Try to detect/store device name for logging headers (no UI changes)
+  useEffect(() => {
+    const AGENT_URLS = [
+      "http://127.0.0.1:47113/hostname",
+      "http://localhost:47113/hostname",
+    ];
+    (async () => {
+      try {
+        // if already set, keep it
+        const existing = localStorage.getItem("attendance_device_name");
+        if (existing && existing.trim()) return;
+        for (const u of AGENT_URLS) {
+          try {
+            const r = await fetch(u, { cache: "no-store" });
+            if (r.ok) {
+              const name = (await r.text()).trim();
+              if (name) {
+                localStorage.setItem("attendance_device_name", name);
+                break;
+              }
+            }
+          } catch {}
+        }
+      } catch {}
+    })();
+  }, []);
+
   // Prefetch & warm-up
   useEffect(() => {
     router.prefetch("/admin/dashboard");
@@ -83,6 +110,22 @@ const LoginPage = () => {
     return () => clearInterval(id);
   }, [loading, username]);
 
+  // Resolve and cache public IP (for accurate activity logs)
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    (async () => {
+      try {
+        const existing = localStorage.getItem('attendance_device_ip');
+        if (existing && existing.trim() && existing !== '127.0.0.1') return;
+        const r = await fetch('https://api.ipify.org?format=json', { cache: 'no-store' });
+        if (!r.ok) return;
+        const data = await r.json();
+        const ip = (data?.ip || '').toString().trim();
+        if (ip) localStorage.setItem('attendance_device_ip', ip);
+      } catch {}
+    })();
+  }, []);
+
   const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     if (busyRef.current) return;
@@ -102,10 +145,21 @@ const LoginPage = () => {
 
       const role: Role = selectedRole || DEFAULT_ROLE;
       const apiBase = process.env.NEXT_PUBLIC_API_BASE || "http://localhost:8000";
+      const headers: Record<string, string> = { "Content-Type": "application/json" };
+      try {
+        const deviceId = typeof window !== 'undefined' ? (localStorage.getItem('attendance_device_id') || '') : '';
+        const deviceName = typeof window !== 'undefined' ? (localStorage.getItem('attendance_device_name') || '') : '';
+        if (deviceId) headers['X-Device-Id'] = deviceId;
+        if (deviceName) headers['X-Device-Name'] = deviceName;
+      } catch {}
       const resp = await fetch(`${apiBase}/api/auth/login`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ username: trimmedUsername, password: trimmedPassword, role }),
+        headers,
+        body: JSON.stringify({ username: trimmedUsername, password: trimmedPassword, role,
+          device_id: (typeof window !== 'undefined' ? localStorage.getItem('attendance_device_id') : null) || undefined,
+          device_name: (typeof window !== 'undefined' ? localStorage.getItem('attendance_device_name') : null) || undefined,
+          ip: (typeof window !== 'undefined' ? localStorage.getItem('attendance_device_ip') : null) || undefined,
+        }),
       });
       if (!resp.ok) {
         const msg = await resp.json().catch(() => ({} as any));

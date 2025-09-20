@@ -52,6 +52,10 @@ def test_check_in_and_check_out_flow(api_client, monkeypatch):
         }
 
     monkeypatch.setattr('attendance.utils.lookup_location_for_ip', fake_lookup)
+    monkeypatch.setattr(
+        'app.common.net_utils.resolve_client_hostname',
+        lambda ip: 'desktop-alice.example.com' if ip else None,
+    )
 
     authenticate(api_client, 'alice', 'pw', 'sales')
 
@@ -72,6 +76,7 @@ def test_check_in_and_check_out_flow(api_client, monkeypatch):
     assert record.location_address == 'Dubai, UAE'
     assert record.location_lat == Decimal('25.2048')
     assert record.location_lng == Decimal('55.2708')
+    assert record.device_name == 'desktop-alice.example.com'
 
     earlier = timezone.now() - timedelta(hours=8)
     Attendance.objects.filter(id=record.id).update(check_in=earlier, date=earlier.date())
@@ -89,6 +94,7 @@ def test_check_in_and_check_out_flow(api_client, monkeypatch):
     assert record.check_out is not None
     assert pytest.approx(float(record.total_hours), rel=0.05) == 8.0
     assert 'Finished' in record.notes
+    assert record.device_name == 'desktop-alice.example.com'
 
 
 @pytest.mark.django_db

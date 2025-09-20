@@ -24,3 +24,7 @@ pytest==8.3.2
 pytest-django==4.9.0
 factory_boy==3.3.0
 Faker==28.0.0
+celery==5.4.0
+redis==5.0.8
+django-redis==5.4.0
+requests==2.32.3

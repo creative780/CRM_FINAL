@@ -89,6 +89,25 @@ async function handle<T>(res: Response): Promise<T> {
     let message: string | undefined;
     if (data && typeof data === 'object') {
       message = (data.detail as string) || (data.message as string) || (data.error as string);
+      // Surface DRF field errors like { field: ["error"] }
+      if (!message) {
+        try {
+          const entries = Object.entries(data as Record<string, any>);
+          const parts: string[] = [];
+          for (const [key, val] of entries) {
+            if (typeof val === 'string' && val) {
+              parts.push(`${key}: ${val}`);
+            } else if (Array.isArray(val) && val.length) {
+              const first = typeof val[0] === 'string' ? val[0] : JSON.stringify(val[0]);
+              parts.push(`${key}: ${first}`);
+            }
+            if (parts.length >= 2) break; // keep concise
+          }
+          if (parts.length) {
+            message = parts.join('; ');
+          }
+        } catch {}
+      }
     }
     if (!message && typeof data === 'string') {
       message = data;
@@ -132,20 +151,36 @@ async function apiRequest<T = any>(
   let response: Response | null = null;
   try {
     response = await fetchWithHeaders(primary);
-    // If the primary request is cross origin and returns a 404, retry the fallback.
-    if (response.status === 404 && crossOrigin && fallback && fallback !== primary) {
+    // If the primary request is cross origin and returns a 404, retry the fallback
+    // ONLY for idempotent requests (GET/HEAD). Avoid redirecting POST/PATCH/DELETE
+    // to the Next.js app which would yield an HTML 404 page.
+    const method = (init.method || 'GET').toString().toUpperCase();
+    const isIdempotent = method === 'GET' || method === 'HEAD';
+    const isApiPath = typeof path === 'string' && (/^\/?api\//.test(path) || path === '/api');
+    if (
+      response.status === 404 &&
+      isIdempotent &&
+      crossOrigin &&
+      fallback &&
+      fallback !== primary &&
+      !isApiPath // never fall back API requests to Next.js
+    ) {
       response = await fetchWithHeaders(fallback);
     }
   } catch (error) {
     // Network failure on the primary request: attempt fallback if appropriate.
+    const isApiPath = typeof path === 'string' && (/^\/?api\//.test(path) || path === '/api');
     if (
       typeof window !== 'undefined' &&
       crossOrigin &&
       fallback &&
-      fallback !== primary
+      fallback !== primary &&
+      !isApiPath // never fall back API requests to Next.js
     ) {
       try {
-        response = await fetchWithHeaders(fallback);
+        const method = (init.method || 'GET').toString().toUpperCase();
+        const isIdempotent = method === 'GET' || method === 'HEAD';
+        response = isIdempotent ? await fetchWithHeaders(fallback) : response;
       } catch (fallbackError) {
         const message =
           fallbackError instanceof TypeError

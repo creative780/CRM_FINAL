@@ -1,4 +1,4 @@
-'use client'
+﻿'use client'
 
 import React, { useState, useEffect } from 'react'
 import { Card } from '../../../components/Card'
@@ -19,6 +19,16 @@ const mockUser = {
   name: 'Ali',
   role: 'designer',
 }
+
+const summarizeItems = (items?: ApiOrder['items']) => {
+  if (!items || items.length === 0) return 'Custom Order';
+  return items
+    .map((item) => {
+      const qty = item.quantity && item.quantity > 0 ? `${item.quantity} x ` : '';
+      return `${qty}${item.name}`;
+    })
+    .join(', ');
+};
 
 type Stage = 'To Do' | 'In Progress' | 'Review' | 'Approved'
 
@@ -134,7 +144,7 @@ export default function DesignKanbanPage() {
         apiOrders.forEach((order: ApiOrder) => {
           const kanbanItem: KanbanItem = {
             id: order.id.toString(),
-            title: order.product_type,
+            title: summarizeItems(order.items),
             client: order.client_name,
             stage: order.stage === 'design' ? 'In Progress' : 
                    order.stage === 'approval' ? 'Review' : 
@@ -256,3 +266,5 @@ export default function DesignKanbanPage() {
     </div>
   )
 }
+
+

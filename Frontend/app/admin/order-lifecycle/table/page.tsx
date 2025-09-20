@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { useMemo, useState, useCallback, Fragment, useEffect } from "react";
 import { Dialog, Transition } from "@headlessui/react";
@@ -12,6 +12,9 @@ import DashboardNavbar from "@/app/components/navbar/DashboardNavbar";
 import { ordersApi, Order } from "@/lib/orders-api";
 import { toast } from "react-hot-toast";
 import { Trash2 } from "lucide-react";
+import ProductSearchModal from "@/app/components/modals/ProductSearchModal";
+import ProductConfigModal from "@/app/components/modals/ProductConfigModal";
+import { BaseProduct, ConfiguredProduct } from "@/app/types/products";
 
 // import global store
 import { useOrderStore } from "@/app/stores/useOrderStore";
@@ -61,13 +64,24 @@ const statusMap: Record<string, Status> = {
   delivered: "Completed",
 };
 
+const summarizeItems = (items?: Order['items']) => {
+  if (!items || items.length === 0) return 'Custom Order';
+  return items
+    .map((item) => {
+      const qty = item.quantity && item.quantity > 0 ? `${item.quantity} x ` : '';
+      return `${qty}${item.name}`;
+    })
+    .join(', ');
+};
+
 const orderToRow = (order: Order): Row => {
   const [datePart = "", timePart = ""] = (order.created_at || "").split("T");
   const time = timePart ? timePart.split(".")[0]?.substring(0, 5) ?? "" : "";
+  const summary = summarizeItems(order.items);
   return {
     id: order.id,
     orderCode: order.order_id,
-    title: `${order.product_type} - ${order.client_name}`,
+    title: `${summary} - ${order.client_name}`,
     date: datePart,
     time,
     urgency: (order.urgency || "Normal") as Urgency,
@@ -99,7 +113,79 @@ export default function OrdersTablePage() {
   const [isCustomOpen, setIsCustomOpen] = useState(false);
   const [customFormData, setCustomFormData] = useState<OrderIntakeFormValues>(() => createOrderIntakeDefaults());
 
-  const [savedOrders, setSavedOrders] = useState<Row[]>([]);
+  const [selectedProducts, setSelectedProducts] = useState<ConfiguredProduct[]>([]);
+  const [showSearchModal, setShowSearchModal] = useState(false);
+  const [showConfigModal, setShowConfigModal] = useState(false);
+  const [pendingBaseProduct, setPendingBaseProduct] = useState<BaseProduct | null>(null);
+  const [pendingInitialQty, setPendingInitialQty] = useState<number | undefined>(undefined);
+  const [pendingInitialAttributes, setPendingInitialAttributes] = useState<Record<string, string> | undefined>(undefined);
+  const [editingProductId, setEditingProductId] = useState<string | null>(null);
+
+  const serializeSelectedProducts = (items: ConfiguredProduct[] = selectedProducts) =>
+    items.map((item) => ({
+      product_id: item.productId,
+      name: item.name,
+      quantity: item.quantity,
+      attributes: item.attributes,
+      sku: item.sku,
+    }));
+
+  const handleAddProductClick = () => {
+    setShowSearchModal(true);
+  };
+
+  const resetPendingProduct = () => {
+    setPendingBaseProduct(null);
+    setPendingInitialQty(undefined);
+    setPendingInitialAttributes(undefined);
+    setEditingProductId(null);
+  };
+
+  const handlePickBaseProduct = (product: BaseProduct, qty = 1) => {
+    setPendingBaseProduct(product);
+    setPendingInitialQty(qty);
+    setPendingInitialAttributes(undefined);
+    setEditingProductId(null);
+    setShowSearchModal(false);
+    setShowConfigModal(true);
+  };
+
+  const handleConfirmProduct = (configured: ConfiguredProduct) => {
+    setSelectedProducts((prev) => {
+      const index = prev.findIndex((item) => item.id === configured.id);
+      return index >= 0
+        ? prev.map((item, idx) => (idx === index ? configured : item))
+        : [...prev, configured];
+    });
+    resetPendingProduct();
+  };
+
+  const handleRemoveProduct = (id: string) => {
+    setSelectedProducts((prev) => prev.filter((item) => item.id !== id));
+  };
+
+  const handleEditProduct = (id: string) => {
+    const existing = selectedProducts.find((item) => item.id === id);
+    if (!existing) return;
+    setPendingBaseProduct({
+      id: existing.productId,
+      name: existing.name,
+      imageUrl: existing.imageUrl,
+    });
+    setPendingInitialQty(existing.quantity);
+    setPendingInitialAttributes(existing.attributes);
+    setEditingProductId(existing.id);
+    setShowConfigModal(true);
+  };
+
+  const handleCloseSearchModal = () => {
+    setShowSearchModal(false);
+  };
+
+  const handleCloseConfigModal = () => {
+    setShowConfigModal(false);
+    resetPendingProduct();
+  };
 
   useEffect(() => {
     const loadOrders = async () => {
@@ -130,6 +216,15 @@ export default function OrdersTablePage() {
     return () => window.removeEventListener("orders:updated", onUpdate);
   }, [isCustomOpen]);
 
+  useEffect(() => {
+    if (!isCustomOpen) {
+      setSelectedProducts([]);
+      resetPendingProduct();
+      setShowSearchModal(false);
+      setShowConfigModal(false);
+    }
+  }, [isCustomOpen]);
+
   const openForRow = useCallback(
     (row: Row) => {
       setSelected(row);
@@ -139,7 +234,6 @@ export default function OrdersTablePage() {
         _orderId: row.id,
         projectDescription: row.title,
         date: normalizeToYMD(row.date) || row.date,
-        products: prev?.products || [],
       }));
       setIsOpen(true);
     },
@@ -147,60 +241,131 @@ export default function OrdersTablePage() {
   );
 
   const createOrder = async (data: OrderIntakeFormValues) => {
-    const clientName = (data?.clientName ?? "").trim();
-    const productNames = Array.isArray(data?.products)
-      ? data.products
-          .map((p: any) => {
-            if (!p) return "";
-            if (typeof p === "string") return p;
-            return typeof p.name === "string" ? p.name : "";
-          })
-          .filter((name: string) => name && name.trim().length > 0)
-      : [];
-    const orderDetails = (data?.orderDetails ?? "").trim();
-    const rawProductType = (data as any)?.productType;
-    const productType =
-      typeof rawProductType === "string" && rawProductType.trim().length > 0
-        ? rawProductType.trim()
-        : productNames.join(", ") || orderDetails;
-    const rawSpecs = data?.specifications;
-    const specs = typeof rawSpecs === "string" && rawSpecs.trim().length > 0 ? rawSpecs.trim() : orderDetails;
-    const urgency = data?.urgency ?? "Normal";
+  const clientName = (data?.clientName ?? "").trim();
+  const itemsPayload = serializeSelectedProducts();
+  const orderDetails = (data?.orderDetails ?? "").trim();
+  const specsInput = data?.specifications;
+  const specs =
+    typeof specsInput === "string" && specsInput.trim().length > 0 ? specsInput.trim() : orderDetails;
+  const urgency = data?.urgency ?? "Normal";
 
-    if (!clientName) {
-      toast.error("Please enter a client name");
-      return;
-    }
-    if (!productType) {
-      toast.error("Please add at least one product before creating the order");
-      return;
+  if (!clientName) {
+    toast.error("Please enter a client name");
+    return;
+  }
+
+  if (itemsPayload.length === 0) {
+    toast.error("Please add at least one product before creating the order");
+    return;
+  }
+
+  try {
+    setLoading(true);
+    setError(null);
+    await ordersApi.createOrder({
+      clientName,
+      specs,
+      urgency,
+      items: itemsPayload,
+    });
+
+    const apiOrders = await ordersApi.getOrders();
+    const convertedOrders = mapOrders(apiOrders);
+
+    setSavedOrders(convertedOrders);
+    setOrders(convertedOrders);
+    setIsCustomOpen(false);
+    setCustomFormData(createOrderIntakeDefaults());
+    setSelectedProducts([]);
+    toast.success("Order created successfully!");
+  } catch (err: any) {
+    setError(err.message || "Failed to create order");
+    toast.error(`Failed to create order: ${err.message}`);
+    console.error("Error creating order:", err);
+  } finally {
+    setLoading(false);
+  }
+};
+
+  const ensureOrderForCustom = async (data: OrderIntakeFormValues): Promise<number | null> => {
+  const clientName = (data?.clientName ?? "").trim();
+  const itemsPayload = serializeSelectedProducts();
+  const orderDetails = (data?.orderDetails ?? "").trim();
+  const specsInput = data?.specifications;
+  const specs =
+    typeof specsInput === "string" && specsInput.trim().length > 0 ? specsInput.trim() : orderDetails;
+  const urgency = data?.urgency ?? "Normal";
+
+  if (!clientName) {
+    toast.error("Please enter a client name");
+    return null;
+  }
+
+  if (itemsPayload.length === 0) {
+    toast.error("Please add at least one product before saving");
+    return null;
+  }
+
+  try {
+    if (!data?._orderId) {
+      const created = await ordersApi.createOrder({ clientName, specs, urgency, items: itemsPayload });
+      setCustomFormData((prev) => ({
+        ...(prev || {}),
+        _orderId: created.id,
+        orderId: created.order_id,
+      } as any));
+      return created.id;
     }
 
+    await ordersApi.updateOrder(data._orderId as number, {
+      client_name: clientName,
+      specs,
+      urgency,
+      items: itemsPayload,
+    });
+    return data._orderId as number;
+  } catch (err: any) {
+    toast.error(err.message || "Failed to save draft");
+    return null;
+  }
+};;
+
+  const handleSaveDraftCustom = async () => {
+    if (savingDraft) return;
+    setSavingDraft(true);
     try {
-      setLoading(true);
-      setError(null);
-      await ordersApi.createOrder({
-        clientName,
-        productType,
-        specs,
-        urgency,
-      });
+      const orderId = await ensureOrderForCustom(customFormData);
+      if (!orderId) return;
 
-      // Refresh orders list
       const apiOrders = await ordersApi.getOrders();
       const convertedOrders = mapOrders(apiOrders);
-
       setSavedOrders(convertedOrders);
       setOrders(convertedOrders);
-      setIsCustomOpen(false);
-      setCustomFormData(createOrderIntakeDefaults());
-      toast.success("Order created successfully!");
+      toast.success("Draft saved");
     } catch (err: any) {
-      setError(err.message || "Failed to create order");
-      toast.error(`Failed to create order: ${err.message || "Unknown error"}`);
-      console.error("Error creating order:", err);
+      toast.error(`Failed to save draft: ${err.message}`);
     } finally {
-      setLoading(false);
+      setSavingDraft(false);
+    }
+  };
+
+  const handleSendToSalesCustom = async () => {
+    if (sendingToSales) return;
+    setSendingToSales(true);
+    try {
+      const orderId = await ensureOrderForCustom(customFormData);
+      if (!orderId) return;
+      await ordersApi.updateOrderStage(orderId, "quotation", {});
+
+      const apiOrders = await ordersApi.getOrders();
+      const convertedOrders = mapOrders(apiOrders);
+      setSavedOrders(convertedOrders);
+      setOrders(convertedOrders);
+      toast.success("Sent to Sales");
+    } catch (err: any) {
+      toast.error(`Failed to send: ${err.message || "Unknown error"}`);
+    } finally {
+      setSendingToSales(false);
     }
   };
 
@@ -367,8 +532,8 @@ export default function OrdersTablePage() {
                     Quotation for {selected?.orderCode}
                   </Dialog.Title>
                   <p className="text-xs text-gray-500">
-                    {selected?.title} · {selected && (normalizeToYMD(selected.date) || selected.date)}
-                    {selected && " · "} {selected?.time}
+                    {selected?.title} Â· {selected && (normalizeToYMD(selected.date) || selected.date)}
+                    {selected && " Â· "} {selected?.time}
                   </p>
                 </div>
                 <button onClick={() => setIsOpen(false)} className="rounded-lg border px-3 py-1.5 text-sm hover:bg-gray-50">
@@ -417,8 +582,7 @@ export default function OrdersTablePage() {
                         // Update order in backend
                         await ordersApi.updateOrder(selected.id, {
                           client_name: formData?.clientName || selected.title.split(" - ")[1] || "",
-                          product_type: formData?.productType || selected.title.split(" - ")[0] || "",
-                          specs: formData?.specifications || "",
+                                          specs: formData?.specifications || "",
                           urgency: formData?.urgency || selected.urgency,
                           status:
                             selected.status === "Completed"
@@ -467,7 +631,19 @@ export default function OrdersTablePage() {
               </div>
 
               <div className="flex-1 overflow-y-auto px-6 py-6">
-                <OrderIntakeForm formData={customFormData} setFormData={setCustomFormData} requireProductsAndFiles />
+                <OrderIntakeForm
+                  formData={customFormData}
+                  setFormData={setCustomFormData}
+                  requireProductsAndFiles
+                  onSaveDraft={handleSaveDraftCustom}
+                  onSendToSales={handleSendToSalesCustom}
+                  savingDraft={savingDraft}
+                  sendingToSales={sendingToSales}
+                  selectedProducts={selectedProducts}
+                  onAddProduct={handleAddProductClick}
+                  onRemoveProduct={handleRemoveProduct}
+                  onEditProduct={handleEditProduct}
+                />
               </div>
 
               <div className="px-6 py-4 border-t bg-gray-50 flex justify-end space-x-3">
@@ -482,6 +658,38 @@ export default function OrdersTablePage() {
           </div>
         </Dialog>
       </Transition>
+
+      <ProductSearchModal
+        open={showSearchModal}
+        onClose={handleCloseSearchModal}
+        onPickBaseProduct={handlePickBaseProduct}
+      />
+
+      <ProductConfigModal
+        open={showConfigModal}
+        onClose={handleCloseConfigModal}
+        baseProduct={pendingBaseProduct}
+        onConfirm={handleConfirmProduct}
+        initialQty={pendingInitialQty}
+        initialAttributes={pendingInitialAttributes}
+        editingProductId={editingProductId ?? undefined}
+      />
     </div>
   );
 }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

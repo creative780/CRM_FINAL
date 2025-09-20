@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 import { create } from "zustand";
 import { persist, createJSONStorage } from "zustand/middleware";
 
@@ -26,9 +26,8 @@ export type DesignerUploadedItem = {
 };
 
 /**
- * Shared form data used across various order stages.  Added `productType`,
- * `specifications`, `sendTo`, `urgency` and `status` as optional fields to
- * support Sales UI fields without causing type errors.
+ * Shared form data used across various order stages. Added `specifications`, `sendTo`, `urgency` and `status`
+ * as optional fields to support Sales UI without causing type errors.
  */
 export type SharedFormData = {
   orderId?: string;
@@ -47,7 +46,6 @@ export type SharedFormData = {
   designerUploads?: Record<string, DesignerUploadedItem[]>;
 
   /** Additional Sales/Quotation fields */
-  productType?: string;
   specifications?: string;
   sendTo?: "Sales" | "Designer" | "Production";
   urgency?: string;

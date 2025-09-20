@@ -1,0 +1,47 @@
+{
+  "info": {
+    "name": "Activity Logs API",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "item": [
+    {
+      "name": "Ingest",
+      "request": {
+        "method": "POST",
+        "header": [
+          {"key": "Content-Type", "value": "application/json"},
+          {"key": "X-Log-Key", "value": "<key_id>"},
+          {"key": "X-Log-Signature", "value": "<signature>"},
+          {"key": "X-Request-Id", "value": "req_example"}
+        ],
+        "url": {
+          "raw": "{{baseUrl}}/api/activity-logs/ingest",
+          "host": ["{{baseUrl}}"],
+          "path": ["api", "activity-logs", "ingest"]
+        },
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"timestamp\": \"2025-09-19T10:45:12Z\",\n  \"tenant_id\": \"acme-001\",\n  \"actor\": {\"id\": \"u_123\", \"role\": \"DESIGNER\"},\n  \"verb\": \"UPLOAD\",\n  \"target\": {\"type\": \"File\", \"id\": \"f_789\"},\n  \"source\": \"FRONTEND\",\n  \"request_id\": \"req_9f2c...\",\n  \"context\": {\n    \"filename\": \"artwork_v3.pdf\",\n    \"mime\": \"application/pdf\",\n    \"size\": 4822331,\n    \"sha256\": \"...\",\n    \"ip\": \"203.0.113.10\",\n    \"user_agent\": \"Chrome/...\",\n    \"tags\": [\"design\",\"revision\"],\n    \"severity\": \"info\"\n  }\n}"
+        }
+      }
+    },
+    {
+      "name": "Query",
+      "request": {
+        "method": "GET",
+        "header": [
+          {"key": "Authorization", "value": "Bearer {{jwt}}"}
+        ],
+        "url": {
+          "raw": "{{baseUrl}}/api/activity-logs/?tenant_id=acme-001",
+          "host": ["{{baseUrl}}"],
+          "path": ["api", "activity-logs"],
+          "query": [
+            {"key": "tenant_id", "value": "acme-001"}
+          ]
+        }
+      }
+    }
+  ]
+}
+

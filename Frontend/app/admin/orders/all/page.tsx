@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import React, { useEffect, useMemo, useState } from "react";
 import { Pencil, ChevronUp, ChevronDown, Trash2 } from "lucide-react";
@@ -21,9 +21,19 @@ type Order = {
   location: string;
   status: string;
   zone?: string;
-  finalPrice?: number;
+finalPrice?: number;
+  items?: ApiOrder["items"];
 };
 const numericFields: Array<keyof Order> = ["id", "price", "advance", "remaining"];
+const summarizeItems = (items?: ApiOrder["items"]) => {
+  if (!items || items.length === 0) return "Custom Order";
+  return items
+    .map((item) => {
+      const qty = item.quantity && item.quantity > 0 ? `${item.quantity} x ` : "";
+      return `${qty}${item.name}`;
+    })
+    .join(", ");
+};
 
 export default function Page() {
   const [orders, setOrders] = useState<Order[]>([]);
@@ -50,21 +60,33 @@ export default function Page() {
         const apiOrders = await ordersApi.getOrders();
         
         // Convert API orders to display format
-        const convertedOrders: Order[] = apiOrders.map((order: ApiOrder) => ({
-          id: order.id,
-          company: order.client_name, // Using client_name as company
-          name: order.client_name, // Using client_name as name
-          phone: "+971-XXXXXXXXX", // Default phone since not in API
-          detail: `${order.product_type} - ${order.specs}`,
-          date: order.created_at.split('T')[0],
-          price: Math.floor(Math.random() * 500) + 50, // Random price since not in API
-          advance: Math.floor(Math.random() * 200) + 10, // Random advance
-          remaining: Math.floor(Math.random() * 300) + 20, // Random remaining
-          location: "Dubai", // Default location
-          status: order.status === 'new' ? 'Pending' : 
-                 order.status === 'in_progress' ? 'In Progress' : 
-                 order.status === 'completed' ? 'Completed' : 'Pending',
-        }));
+        const convertedOrders: Order[] = apiOrders.map((order: ApiOrder) => {
+          const summary = summarizeItems(order.items);
+          const detail = order.specs ? `${summary} - ${order.specs}` : summary;
+          return {
+            id: order.id,
+            company: order.client_name,
+            name: order.client_name,
+            phone: "+971-XXXXXXXXX",
+            detail,
+            date: order.created_at.split('T')[0],
+            price: Math.floor(Math.random() * 500) + 50,
+            advance: Math.floor(Math.random() * 200) + 10,
+            remaining: Math.floor(Math.random() * 300) + 20,
+            location: "Dubai",
+            status:
+              order.status === 'new'
+                ? 'Pending'
+                : order.status === 'in_progress'
+                ? 'In Progress'
+                : order.status === 'completed'
+                ? 'Completed'
+                : 'Pending',
+            items: order.items,
+          };
+        });
+
+
         
         setOrders(convertedOrders);
       } catch (err: any) {
@@ -103,6 +125,42 @@ export default function Page() {
     setSelectedOrder(null);
     setShowModal(false);
     setShowStatusDropdown(false);
+  };
+
+  const handleUpdateOrder = async () => {
+    if (!selectedOrder) return;
+
+    try {
+      // Update order in backend
+      await ordersApi.updateOrder(selectedOrder.id, {
+        client_name: selectedOrder.company, // Using company as client_name
+        specs: selectedOrder.detail.split(' - ')[1] || '',
+        urgency:
+          selectedOrder.status === 'Urgent'
+            ? 'Urgent'
+            : selectedOrder.status === 'In Progress'
+            ? 'High'
+            : 'Normal',
+        status:
+          selectedOrder.status === 'Completed'
+            ? 'completed'
+            : selectedOrder.status === 'In Progress'
+            ? 'in_progress'
+            : 'new',
+        items: selectedOrder.items,
+      });
+
+      // Update local state
+      setOrders((prev) =>
+        prev.map((o) => (o.id === selectedOrder.id ? selectedOrder : o))
+      );
+
+      toast.success(`Order #${selectedOrder.id} updated successfully!`);
+      closeModal();
+    } catch (err: any) {
+      toast.error(`Failed to update order: ${err.message}`);
+      console.error('Error updating order:', err);
+    }
   };
 
   const handleDeleteOrder = async (orderId: number) => {
@@ -430,7 +488,7 @@ export default function Page() {
                 onClick={closeModal}
                 className="text-gray-400 hover:text-black text-xl"
               >
-                ×
+                Ã—
               </button>
             </div>
             <hr className="border-gray-400 mb-4" />
@@ -544,7 +602,7 @@ export default function Page() {
                     }`}
                   >
                     <span>{selectedOrder.status}</span>
-                    <span className="text-sm ml-2">▼</span>
+                    <span className="text-sm ml-2">â–¼</span>
                   </button>
 
                   {showStatusDropdown && (
@@ -601,33 +659,7 @@ export default function Page() {
                 </div>
                 <button
                   type="button"
-                  onClick={async () => {
-                    if (!selectedOrder) return;
-
-                    try {
-                      // Update order in backend
-                      await ordersApi.updateOrder(selectedOrder.id, {
-                        client_name: selectedOrder.company, // Using company as client_name
-                        product_type: selectedOrder.detail.split(' - ')[0] || selectedOrder.detail,
-                        specs: selectedOrder.detail.split(' - ')[1] || '',
-                        urgency: selectedOrder.status === 'Urgent' ? 'Urgent' : 
-                                selectedOrder.status === 'In Progress' ? 'High' : 'Normal',
-                        status: selectedOrder.status === 'Completed' ? 'completed' :
-                               selectedOrder.status === 'In Progress' ? 'in_progress' : 'new',
-                      });
-
-                      // Update local state
-                      setOrders((prev) =>
-                        prev.map((o) => (o.id === selectedOrder.id ? selectedOrder : o))
-                      );
-
-                      toast.success(`Order #${selectedOrder.id} updated successfully!`);
-                      closeModal();
-                    } catch (err: any) {
-                      toast.error(`Failed to update order: ${err.message}`);
-                      console.error('Error updating order:', err);
-                    }
-                  }}
+                  onClick={handleUpdateOrder}
                   className="bg-black text-white px-4 py-2 rounded hover:bg-gray-800"
                 >
                   Save
@@ -640,3 +672,15 @@ export default function Page() {
     </div>
   );
 }
+
+
+
+
+
+
+
+
+
+
+
+
