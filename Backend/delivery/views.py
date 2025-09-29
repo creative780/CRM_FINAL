@@ -6,7 +6,7 @@ import logging
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework.parsers import MultiPartParser
-from orders.models import Order, OrderDelivery
+from orders.models import Order, DeliveryStage
 from .models import DeliveryCode
 from accounts.permissions import RolePermission
 from drf_spectacular.utils import extend_schema
@@ -35,9 +35,10 @@ class SendCodeView(APIView):
         code = _generate_code()
         ttl = timezone.now() + timedelta(minutes=15)
         DeliveryCode.objects.update_or_create(order=order, defaults={'code': code, 'expires_at': ttl})
-        od, _ = OrderDelivery.objects.get_or_create(order=order)
-        od.delivery_code = code
-        od.save(update_fields=['delivery_code'])
+        od, _ = DeliveryStage.objects.get_or_create(order=order)
+        # Note: delivery_code is now on Order model, not DeliveryStage
+        order.delivery_code = code
+        order.save(update_fields=['delivery_code'])
         # SMS provider abstraction (console)
         provider = getattr(settings, 'SMS_PROVIDER', 'console')
         if provider == 'console' and settings.DEBUG:
@@ -70,7 +71,7 @@ class RiderPhotoUploadView(APIView):
             for chunk in photo.chunks():
                 fh.write(chunk)
         url = f"{settings.MEDIA_URL}{fname}"
-        od, _ = OrderDelivery.objects.get_or_create(order=order)
+        od, _ = DeliveryStage.objects.get_or_create(order=order)
         od.rider_photo_path = url
         od.save(update_fields=['rider_photo_path'])
         return Response({'url': url})

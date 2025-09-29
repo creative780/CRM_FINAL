@@ -1,57 +1,96 @@
 from django.db import models
 from django.conf import settings
+from django.utils import timezone
 
 
-class ChatRoom(models.Model):
-    ROOM_TYPES = (
-        ('general', 'General'),
-        ('department', 'Department'),
-        ('project', 'Project'),
-        ('private', 'Private'),
+class Conversation(models.Model):
+    """A conversation between users and/or bots"""
+    created_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, 
+        on_delete=models.CASCADE, 
+        related_name='created_conversations'
     )
-
-    name = models.CharField(max_length=255)
-    description = models.TextField(blank=True)
-    room_type = models.CharField(max_length=20, choices=ROOM_TYPES, default='general')
-    created_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='created_rooms')
-    members = models.ManyToManyField(settings.AUTH_USER_MODEL, through='ChatRoomMember', related_name='chat_rooms')
-    is_active = models.BooleanField(default=True)
+    title = models.CharField(max_length=255, null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
+    is_archived = models.BooleanField(default=False)
 
     class Meta:
         ordering = ['-updated_at']
 
     def __str__(self):
-        return self.name
+        return self.title or f"Conversation {self.id}"
+
+    @property
+    def last_message(self):
+        return self.messages.order_by('-created_at').first()
 
 
-class ChatRoomMember(models.Model):
-    room = models.ForeignKey(ChatRoom, on_delete=models.CASCADE)
-    user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE)
+class Participant(models.Model):
+    """Participants in a conversation"""
+    ROLE_CHOICES = [
+        ('owner', 'Owner'),
+        ('member', 'Member'),
+        ('agent', 'Agent'),
+    ]
+    
+    conversation = models.ForeignKey(
+        Conversation, 
+        on_delete=models.CASCADE, 
+        related_name='participants'
+    )
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL, 
+        on_delete=models.CASCADE, 
+        related_name='conversation_participants'
+    )
+    role = models.CharField(max_length=10, choices=ROLE_CHOICES, default='member')
     joined_at = models.DateTimeField(auto_now_add=True)
-    is_admin = models.BooleanField(default=False)
+    last_read_at = models.DateTimeField(null=True, blank=True)
 
     class Meta:
-        unique_together = ['room', 'user']
+        unique_together = ['conversation', 'user']
 
     def __str__(self):
-        return f"{self.user.username} in {self.room.name}"
+        return f"{self.user.username} ({self.role}) in {self.conversation}"
 
 
-class ChatMessage(models.Model):
-    room = models.ForeignKey(ChatRoom, on_delete=models.CASCADE, related_name='messages')
-    sender = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='sent_messages')
-    content = models.TextField()
-    message_type = models.CharField(max_length=20, default='text', choices=[
-        ('text', 'Text'),
-        ('image', 'Image'),
-        ('file', 'File'),
+class Message(models.Model):
+    """Messages in a conversation"""
+    MESSAGE_TYPES = [
+        ('user', 'User'),
+        ('bot', 'Bot'),
         ('system', 'System'),
-    ])
-    attachment = models.FileField(upload_to='chat/attachments/', null=True, blank=True)
-    reply_to = models.ForeignKey('self', on_delete=models.SET_NULL, null=True, blank=True, related_name='replies')
-    is_edited = models.BooleanField(default=False)
+    ]
+    
+    STATUS_CHOICES = [
+        ('sent', 'Sent'),
+        ('delivered', 'Delivered'),
+        ('read', 'Read'),
+    ]
+    
+    conversation = models.ForeignKey(
+        Conversation, 
+        on_delete=models.CASCADE, 
+        related_name='messages'
+    )
+    sender = models.ForeignKey(
+        settings.AUTH_USER_MODEL, 
+        on_delete=models.SET_NULL, 
+        null=True, 
+        blank=True,
+        related_name='sent_messages'
+    )
+    type = models.CharField(max_length=10, choices=MESSAGE_TYPES, default='user')
+    text = models.TextField()
+    rich = models.JSONField(null=True, blank=True)  # For rich content like markdown, code blocks
+    attachment = models.FileField(
+        upload_to='chat/attachments/', 
+        null=True, 
+        blank=True,
+        help_text="File attachment (max 10MB)"
+    )
+    status = models.CharField(max_length=10, choices=STATUS_CHOICES, default='sent')
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -59,4 +98,31 @@ class ChatMessage(models.Model):
         ordering = ['created_at']
 
     def __str__(self):
-        return f"{self.sender.username}: {self.content[:50]}"
+        sender_name = self.sender.username if self.sender else 'System'
+        return f"{sender_name}: {self.text[:50]}"
+
+    def mark_as_read(self, user):
+        """Mark message as read for a specific user"""
+        try:
+            participant = Participant.objects.get(
+                conversation=self.conversation,
+                user=user
+            )
+            participant.last_read_at = timezone.now()
+            participant.save(update_fields=['last_read_at'])
+        except Participant.DoesNotExist:
+            pass
+
+
+class Prompt(models.Model):
+    """Quick-start prompts for the bot"""
+    title = models.CharField(max_length=255)
+    text = models.TextField()
+    is_active = models.BooleanField(default=True)
+    order = models.PositiveIntegerField(default=0)
+
+    class Meta:
+        ordering = ['order', 'title']
+
+    def __str__(self):
+        return self.title

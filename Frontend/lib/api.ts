@@ -20,12 +20,12 @@ function normalizeBase(base?: string | null): string | null {
 // requests go to Django in development and avoids 404s from Next.js.
 function resolveBase(preferred: string | null | undefined): string | null {
   if (preferred) return preferred;
-  // When running on the server (SSR), fall back to localhost
+  // When running on the server (SSR), fall back to 127.0.0.1
   if (typeof window === 'undefined') {
-    return 'http://localhost:8000';
+    return 'http://127.0.0.1:8000';
   }
-  // Always default to localhost:8000 for client-side if no base specified
-  return 'http://localhost:8000';
+  // Always default to 127.0.0.1:8000 for client-side if no base specified
+  return 'http://127.0.0.1:8000';
 }
 
 function joinBaseAndPath(base: string, path: string): string {

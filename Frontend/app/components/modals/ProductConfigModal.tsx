@@ -1,10 +1,11 @@
 ﻿"use client";
 
-import React, { useState, useEffect, useCallback } from "react";
+import React, { useState, useEffect, useCallback, useMemo } from "react";
 import { Save, Loader2, ArrowLeft } from "lucide-react";
 import { BaseProduct, ConfiguredProduct, ProductAttribute } from "@/app/types/products";
 import { getProductAttributes } from "@/app/lib/products";
 import DesignUploadSection from "./DesignUploadSection";
+import { saveFileMetaToStorage, loadFileMetaFromStorage, clearFilesFromStorage } from "@/app/lib/fileStorage";
 
 export interface ProductConfigModalProps {
   open: boolean;
@@ -31,7 +32,7 @@ export default function ProductConfigModal({
 }: ProductConfigModalProps) {
   const [attributes, setAttributes] = useState<ProductAttribute[]>([]);
   const [selectedAttributes, setSelectedAttributes] = useState<Record<string, string>>({});
-  const [quantity, setQuantity] = useState(1);
+  const [quantity, setQuantity] = useState("");
   const [price, setPrice] = useState<number>(0);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -41,6 +42,72 @@ export default function ProductConfigModal({
   const [readyDesign, setReadyDesign] = useState(false);
   const [needCustom, setNeedCustom] = useState(false);
   const [customText, setCustomText] = useState("");
+
+  // Load design files from localStorage on component mount
+  useEffect(() => {
+    if (baseProduct) {
+      const storageKey = `orderLifecycle_designFiles_${baseProduct.id}`;
+      const storedFiles = loadFileMetaFromStorage(storageKey);
+      if (storedFiles.length > 0) {
+        // Convert stored file metadata back to File objects with proper name
+        const loadedFiles = storedFiles.map(meta => {
+          const file = new File([], meta.name, { 
+            type: meta.type,
+            lastModified: meta.lastModified
+          });
+          // Ensure the name property is properly set
+          Object.defineProperty(file, 'name', {
+            value: meta.name,
+            writable: false
+          });
+          return file;
+        });
+        setFiles(loadedFiles);
+      }
+    }
+  }, [baseProduct]);
+
+  // Save design files to localStorage whenever files change
+  useEffect(() => {
+    if (baseProduct && files.length > 0) {
+      const storageKey = `orderLifecycle_designFiles_${baseProduct.id}`;
+      saveFileMetaToStorage(storageKey, files);
+    } else if (baseProduct) {
+      const storageKey = `orderLifecycle_designFiles_${baseProduct.id}`;
+      clearFilesFromStorage(storageKey);
+    }
+  }, [files, baseProduct]);
+
+  // Price calculation helpers
+  const toQty = (v: string) => {
+    const n = Number(v);
+    return Number.isFinite(n) && n >= 0 ? Math.floor(n) : 0;
+  };
+
+  const baseUnitPrice = baseProduct?.defaultPrice || 0;
+  
+  const effectiveUnitPrice = useMemo(() => {
+    const sumDelta = Object.entries(selectedAttributes).reduce((sum, [attrKey, optionValue]) => {
+      if (!optionValue) return sum;
+      const attr = attributes.find(a => a.key === attrKey);
+      const option = attr?.options.find(o => o.value === optionValue);
+      // Use priceDelta property, default to 0 if not present
+      return sum + (option?.priceDelta ?? 0);
+    }, 0);
+    return Math.max(0, baseUnitPrice + sumDelta);
+  }, [baseUnitPrice, selectedAttributes, attributes]);
+
+  const finalPrice = useMemo(() => {
+    return effectiveUnitPrice * toQty(quantity);
+  }, [effectiveUnitPrice, quantity]);
+
+  // Auto-update price when attributes change
+  useEffect(() => {
+    if (baseProduct && Object.keys(selectedAttributes).length > 0) {
+      const newPrice = effectiveUnitPrice;
+      setPrice(newPrice);
+    }
+  }, [effectiveUnitPrice, baseProduct]);
 
   // Load product attributes when baseProduct changes
   useEffect(() => {
@@ -80,13 +147,13 @@ export default function ProductConfigModal({
   // Reset state when modal opens/closes
   useEffect(() => {
     if (open) {
-      setQuantity(initialQty);
+      setQuantity(initialQty ? initialQty.toString() : "");
       setError(null);
       // Don't set selectedAttributes here - let the first useEffect handle it
     } else {
       setAttributes([]);
       setSelectedAttributes({});
-      setQuantity(1);
+      setQuantity("");
       setPrice(0);
       setFiles([]);
       setReadyDesign(false);
@@ -140,13 +207,14 @@ export default function ProductConfigModal({
       return;
     }
 
-    if (quantity < 1) {
+    const qtyNum = toQty(quantity);
+    if (qtyNum < 1) {
       setError("Quantity must be at least 1");
       return;
     }
 
-    if (price <= 0) {
-      setError("Price must be greater than 0");
+    if (effectiveUnitPrice <= 0) {
+      setError("Effective unit price must be greater than 0");
       return;
     }
 
@@ -156,8 +224,8 @@ export default function ProductConfigModal({
       productId: baseProduct.id,
       name: baseProduct.name,
       imageUrl: baseProduct.imageUrl,
-      quantity,
-      price,
+      quantity: qtyNum,
+      price: effectiveUnitPrice, // Always use the calculated effective unit price
       attributes: selectedAttributes,
       sku: `${baseProduct.id}_${Object.values(selectedAttributes).join('_')}`,
       design: {
@@ -172,6 +240,7 @@ export default function ProductConfigModal({
   };
 
   const handleOverlayClick = (e: React.MouseEvent) => {
+    // Only close if clicking on the backdrop (not on the modal content)
     if (e.target === e.currentTarget) {
       onClose();
     }
@@ -181,7 +250,7 @@ export default function ProductConfigModal({
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center p-4"
+      className="fixed inset-0 z-[60] flex items-center justify-center p-4"
       style={{
         background: 'rgba(0, 0, 0, 0.4)',
         backdropFilter: 'blur(8px)',
@@ -189,7 +258,10 @@ export default function ProductConfigModal({
       }}
       onClick={handleOverlayClick}
     >
-      <div className="bg-white rounded-2xl shadow-xl w-full max-w-4xl max-h-[90vh] overflow-hidden">
+      <div 
+        className="bg-white rounded-2xl shadow-xl w-full max-w-4xl max-h-[90vh] overflow-hidden"
+        onClick={(e) => e.stopPropagation()}
+      >
         {/* Header */}
         <div className="flex items-center p-6 border-b border-gray-200">
           <div className="flex items-center gap-3">
@@ -252,11 +324,23 @@ export default function ProductConfigModal({
                       className="w-24 h-24 object-cover rounded-lg border border-gray-200 flex-shrink-0"
                     />
                     <div className="flex-1 min-w-0">
-                      <h3 className="text-lg font-semibold text-gray-900 mb-2">
+                      <h3 className="text-lg font-semibold text-gray-900 leading-tight mb-1">
                         {baseProduct.name}
                       </h3>
-                      <div className="text-sm text-gray-600">
-                        <span className="font-medium">Stock Available:</span> {baseProduct.stock || 'N/A'}
+                      <div className="text-sm">
+                        <span className="font-medium text-gray-600">Stock Available:</span> 
+                        <span className={`ml-1 font-semibold ${
+                          (baseProduct.stock || 0) > (baseProduct.stockThreshold || 0) 
+                            ? 'text-green-600' 
+                            : 'text-red-600'
+                        }`}>
+                          {baseProduct.stock || 'N/A'}
+                        </span>
+                        {baseProduct.stockThreshold && (
+                          <span className="text-xs text-gray-500 ml-1">
+                            (Threshold: {baseProduct.stockThreshold})
+                          </span>
+                        )}
                       </div>
                     </div>
                   </div>
@@ -274,7 +358,7 @@ export default function ProductConfigModal({
                           key={option.value}
                           onClick={() => handleAttributeChange(attribute.key, option.value)}
                           className={`
-                            px-3 py-2 text-sm border rounded-lg transition-colors
+                            relative px-3 py-2 text-sm border rounded-lg transition-colors
                             ${selectedAttributes[attribute.key] === option.value
                               ? "bg-[#891F1A] text-white border-[#891F1A]"
                               : "bg-white text-gray-700 border-gray-300 hover:border-[#891F1A] hover:text-[#891F1A]"
@@ -282,6 +366,17 @@ export default function ProductConfigModal({
                           `}
                         >
                           {option.label}
+                          {option.priceDelta !== undefined && option.priceDelta !== 0 && (
+                            <span className={`
+                              absolute -top-3.5 -right-5 rounded px-1.5 py-0.5 text-xs font-medium border border-white shadow-sm z-10
+                              ${option.priceDelta > 0 
+                                ? 'bg-green-100 text-green-700' 
+                                : 'bg-red-100 text-red-700'
+                              }
+                            `}>
+                              {option.priceDelta > 0 ? `+AED ${option.priceDelta}` : `-AED ${Math.abs(option.priceDelta)}`}
+                            </span>
+                          )}
                         </button>
                       ))}
                     </div>
@@ -294,10 +389,15 @@ export default function ProductConfigModal({
                     Quantity
                   </label>
                   <input
-                    type="number"
-                    min="1"
+                    type="text"
+                    placeholder="Qty"
                     value={quantity}
-                    onChange={(e) => setQuantity(parseInt(e.target.value) || 1)}
+                    onChange={(e) => {
+                      const value = e.target.value;
+                      // Only allow digits
+                      const numericValue = value.replace(/\D/g, '');
+                      setQuantity(numericValue);
+                    }}
                     className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-[#891F1A] focus:border-transparent"
                   />
                 </div>
@@ -317,22 +417,26 @@ export default function ProductConfigModal({
                   />
                 </div>
 
-                {/* Selected Configuration Summary */}
-                {Object.keys(selectedAttributes).length > 0 && (
+                {/* Configuration Summary */}
+                {baseProduct && (
                   <div className="bg-gray-50 rounded-lg p-4">
                     <h4 className="text-sm font-medium text-gray-700 mb-2">Configuration Summary</h4>
                     <div className="space-y-1 text-sm text-gray-600">
-                      <div>Quantity: {quantity}</div>
-                      <div>Unit Price: AED {price.toFixed(2)}</div>
+                      <div>Quantity: {quantity || "0"}</div>
+                      <div>Unit Price: AED {effectiveUnitPrice.toFixed(2)}</div>
                       {attributes.map((attr) => {
                         const selectedValue = selectedAttributes[attr.key];
                         const selectedOption = attr.options.find(opt => opt.value === selectedValue);
-                        return (
-                          <div key={attr.key}>
-                            {attr.label}: {selectedOption?.label || selectedValue}
-                          </div>
-                        );
+                        if (selectedValue && selectedOption) {
+                          return (
+                            <div key={attr.key}>
+                              {attr.label}: {selectedOption.label}
+                            </div>
+                          );
+                        }
+                        return null;
                       })}
+                      <div className="font-bold">Final Price: AED {finalPrice.toFixed(2)}</div>
                     </div>
                   </div>
                 )}

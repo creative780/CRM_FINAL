@@ -1,9 +1,10 @@
 ﻿"use client";
 
-import React, { useCallback, useState } from "react";
+import React, { useCallback, useState, useEffect } from "react";
 import { Plus } from "lucide-react";
 import SelectedProductsList from "@/app/components/products/SelectedProductsList";
 import { ConfiguredProduct } from "@/app/types/products";
+import { saveFileMetaToStorage, loadFileMetaFromStorage, clearFilesFromStorage } from "@/app/lib/fileStorage";
 
 /**
  * Order intake form component used to collect the details necessary to create
@@ -62,7 +63,7 @@ type Props = {
   savingDraft?: boolean;
   sendingToSales?: boolean;
   selectedProducts?: ConfiguredProduct[];
-  onAddProduct?: () => void;
+  onAddProduct?: (e?: React.MouseEvent) => void;
   onRemoveProduct?: (id: string) => void;
   onEditProduct?: (id: string) => void;
 };
@@ -134,6 +135,29 @@ const OrderIntakeForm: React.FC<Props> = ({
 
   const [intakeFiles, setIntakeFiles] = useState<UploadMeta[]>([]);
 
+  // Load files from localStorage on component mount
+  useEffect(() => {
+    const storedFiles = loadFileMetaFromStorage('orderLifecycle_intakeFiles');
+    if (storedFiles.length > 0) {
+      setIntakeFiles(storedFiles);
+    }
+  }, []);
+
+  // Save files to localStorage whenever intakeFiles changes
+  useEffect(() => {
+    if (intakeFiles.length > 0) {
+      // Convert UploadMeta to File objects for storage
+      const files = intakeFiles.map(meta => new File([], meta.name, { 
+        type: meta.type,
+        lastModified: Date.now()
+      }));
+      const urls = intakeFiles.map(meta => meta.url);
+      saveFileMetaToStorage('orderLifecycle_intakeFiles', files, urls);
+    } else {
+      clearFilesFromStorage('orderLifecycle_intakeFiles');
+    }
+  }, [intakeFiles]);
+
   /** ===== Files ===== */
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const selected = Array.from(e.target.files || []);
@@ -164,7 +188,13 @@ const OrderIntakeForm: React.FC<Props> = ({
   };
 
   /** ===== Products ===== */
-  const hasAtLeastOneProduct = Array.isArray(selectedProducts) && selectedProducts.length > 0;
+  const [isClient, setIsClient] = React.useState(false);
+  
+  React.useEffect(() => {
+    setIsClient(true);
+  }, []);
+  
+  const hasAtLeastOneProduct = isClient && Array.isArray(selectedProducts) && selectedProducts.length > 0;
 
   /** ===== Validation ===== */
   const hasAtLeastOneFile = intakeFiles.length > 0;
@@ -261,7 +291,7 @@ const OrderIntakeForm: React.FC<Props> = ({
             </div>
             <button
               type="button"
-              onClick={onAddProduct}
+              onClick={(e) => onAddProduct(e)}
               className="mt-2 inline-flex items-center justify-center gap-2 rounded-lg bg-[#891F1A] px-3 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-[#6f1814] sm:mt-0"
             >
               <Plus className="h-4 w-4" />
@@ -269,7 +299,11 @@ const OrderIntakeForm: React.FC<Props> = ({
             </button>
           </div>
 
-          {hasAtLeastOneProduct ? (
+          {!isClient ? (
+            <div className="rounded-xl border border-dashed border-gray-300 bg-gray-50 px-4 py-6 text-center text-sm text-gray-500">
+              Loading...
+            </div>
+          ) : hasAtLeastOneProduct ? (
             <SelectedProductsList
               items={selectedProducts}
               onRemove={onRemoveProduct}

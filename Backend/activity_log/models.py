@@ -5,7 +5,7 @@ from dataclasses import dataclass
 from typing import Any, Optional
 
 from django.conf import settings
-from django.contrib.postgres.fields import ArrayField
+# from django.contrib.postgres.fields import ArrayField  # Commented out for SQLite compatibility
 from django.core.validators import RegexValidator
 from django.db import models
 from django.db.models import JSONField, Index
@@ -91,7 +91,7 @@ class ActivityEvent(models.Model):
 class ActivityType(models.Model):
     key = models.CharField(max_length=64, unique=True)
     description = models.CharField(max_length=255)
-    role_scope = ArrayField(models.CharField(max_length=16), blank=True, default=list)
+    role_scope = models.JSONField(blank=True, default=list)
     default_severity = models.CharField(max_length=32, blank=True, default="info")
 
     class Meta:
@@ -116,11 +116,11 @@ class RetentionAction(models.TextChoices):
 
 class RetentionPolicy(models.Model):
     name = models.CharField(max_length=128)
-    role_filter = ArrayField(models.CharField(max_length=16), blank=True, default=list)
-    target_type_filter = ArrayField(models.CharField(max_length=64), blank=True, default=list)
+    role_filter = models.JSONField(blank=True, default=list)
+    target_type_filter = models.JSONField(blank=True, default=list)
     keep_days = models.IntegerField()
     action = models.CharField(max_length=16, choices=RetentionAction.choices)
-    drop_fields = ArrayField(models.CharField(max_length=128), blank=True, default=list)
+    drop_fields = models.JSONField(blank=True, default=list)
     mask_fields = JSONField(default=dict, blank=True)
     enabled = models.BooleanField(default=True)
 

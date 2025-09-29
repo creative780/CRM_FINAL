@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 import { useEffect, useMemo, useState, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "../../components/Tabs";
@@ -9,7 +9,9 @@ import Link from "next/link";
 import ProductSearchModal from "../../components/modals/ProductSearchModal";
 import ProductConfigModal from "../../components/modals/ProductConfigModal";
 import { BaseProduct, ConfiguredProduct } from "../../types/products";
-/* â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+import { getProductById } from "../../lib/products";
+import { clearFilesFromStorage } from "../../lib/fileStorage";
+/* ────────────────────────────────────────────────────────────────────────────
    Stage components
 --------------------------------------------------------------------------- */
 import OrderIntakeForm from "../../components/order-stages/OrderIntakeForm";
@@ -19,7 +21,7 @@ import PrintingQAForm from "../../components/order-stages/PrintingQAForm";
 import ClientApprovalForm from "../../components/order-stages/ClientApprovalForm";
 import DeliveryProcessForm from "../../components/order-stages/DeliveryProcessForm";
 
-/* â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+/* ────────────────────────────────────────────────────────────────────────────
    RBAC (role still used for badge and table route, but NOT for tab visibility)
 --------------------------------------------------------------------------- */
 type Role = "admin" | "sales" | "designer" | "production" | "delivery" | "finance";
@@ -38,14 +40,14 @@ function getUserRole(): Role {
   return known.includes(r as Role) ? (r as Role) : "sales";
 }
 
-/* Role â†’ table route */
+/* Role ? table route */
 const TABLE_ROUTES: Partial<Record<Role, string>> = {
   sales: "/admin/order-lifecycle/table",
   production: "/admin/order-lifecycle/table/production",
   designer: "/admin/order-lifecycle/table/designer",
 };
 
-/* â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+/* ────────────────────────────────────────────────────────────────────────────
    Stage registry
 --------------------------------------------------------------------------- */
 const STAGE_REGISTRY: Record<
@@ -143,18 +145,21 @@ const STAGE_REGISTRY: Record<
   },
 };
 
-/* â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+/* ────────────────────────────────────────────────────────────────────────────
    Component
 --------------------------------------------------------------------------- */
 export default function OrderLifecyclePage() {
   // Avoid SSR/CSR hydration mismatch by deferring role resolution to client
   const [role, setRole] = useState<Role>("sales");
+  const [isClient, setIsClient] = useState(false);
+  
   useEffect(() => {
+    setIsClient(true);
     setRole(getUserRole());
   }, []);
   const router = useRouter();
 
-  // â¬‡â¬‡â¬‡ All roles see ALL stages (no role-based filtering)
+  // ⬇⬇⬇ All roles see ALL stages (no role-based filtering)
   const visibleStageKeys: StageKey[] = useMemo(() => {
     const ORDER: StageKey[] = [
       "orderIntake",
@@ -169,7 +174,24 @@ export default function OrderLifecyclePage() {
 
   const stages = useMemo(() => visibleStageKeys.map((k) => STAGE_REGISTRY[k].label), [visibleStageKeys]);
 
-  const [currentIndex, setCurrentIndex] = useState(0);
+  // Initialize current stage index with localStorage persistence
+  const [currentIndex, setCurrentIndex] = useState(() => {
+    if (typeof window === "undefined") {
+      return 0;
+    }
+
+    // Try to load from localStorage
+    const savedIndex = localStorage.getItem('orderLifecycle_currentIndex');
+    if (savedIndex) {
+      try {
+        return parseInt(savedIndex, 10) || 0;
+      } catch (e) {
+        console.warn('Failed to parse saved current index:', e);
+      }
+    }
+
+    return 0;
+  });
   const [deliveryCode, setDeliveryCode] = useState("");
   const [riderPhoto, setRiderPhoto] = useState<File | null>(null);
   const canGenerate = deliveryCode === "";
@@ -178,32 +200,169 @@ export default function OrderLifecyclePage() {
     setCurrentIndex((i) => Math.min(i, Math.max(visibleStageKeys.length - 1, 0)));
   }, [visibleStageKeys]);
 
-  const [formData, setFormData] = useState<any>({
-    clientName: "",
-    specifications: "",
-    urgency: "",
-    items: [],
-    status: "New",
-    rawMaterialCost: 0,
-    labourCost: 0,
-    finishingCost: 0,
-    paperCost: 0,
-    inkCost: 0,
-    machineCost: 0,
-    designCost: 0,
-    packagingCost: 0,
-    deleiveryCost: 0,
-    discount: 0,
-    advancePaid: 0,
-    requirementsFiles: [],
-    sku: "",
-    qty: 0,
-    phone: "",
-    deliveryCode: "",
-    deliveryStatus: "Dispatched",
+  // Initialize form data with localStorage persistence
+  const [formData, setFormData] = useState<any>(() => {
+    if (typeof window === "undefined") {
+      return {
+        clientName: "",
+        specifications: "",
+        urgency: "",
+        items: [],
+        products: [],
+        status: "New",
+        rawMaterialCost: 0,
+        labourCost: 0,
+        finishingCost: 0,
+        paperCost: 0,
+        inkCost: 0,
+        machineCost: 0,
+        designCost: 0,
+        packagingCost: 0,
+        deliveryCost: 0,
+        discount: 0,
+        advancePaid: 0,
+        requirementsFiles: [],
+        sku: "",
+        qty: 0,
+        phone: "",
+        deliveryCode: "",
+        deliveryStatus: "Dispatched",
+      };
+    }
+
+    // Check if we're loading an existing order from URL
+    const urlParams = new URLSearchParams(window.location.search);
+    const urlOrderId = urlParams.get('orderId');
+    
+    // If loading an existing order, don't load from localStorage
+    if (urlOrderId) {
+      console.log('Loading existing order from URL, skipping localStorage');
+      return {
+        clientName: "",
+        specifications: "",
+        urgency: "",
+        items: [],
+        products: [],
+        status: "New",
+        rawMaterialCost: 0,
+        labourCost: 0,
+        finishingCost: 0,
+        paperCost: 0,
+        inkCost: 0,
+        machineCost: 0,
+        designCost: 0,
+        packagingCost: 0,
+        deliveryCost: 0,
+        discount: 0,
+        advancePaid: 0,
+        requirementsFiles: [],
+        sku: "",
+        qty: 0,
+        phone: "",
+        deliveryCode: "",
+        deliveryStatus: "Dispatched",
+      };
+    }
+
+    // Try to load from localStorage only for new orders
+    const savedData = localStorage.getItem('orderLifecycle_formData');
+    if (savedData) {
+      try {
+        return JSON.parse(savedData);
+      } catch (e) {
+        console.warn('Failed to parse saved form data:', e);
+      }
+    }
+
+    return {
+      clientName: "",
+      specifications: "",
+      urgency: "",
+      items: [],
+      products: [],
+      status: "New",
+      rawMaterialCost: 0,
+      labourCost: 0,
+      finishingCost: 0,
+      paperCost: 0,
+      inkCost: 0,
+      machineCost: 0,
+      designCost: 0,
+      packagingCost: 0,
+      deleiveryCost: 0,
+      discount: 0,
+      advancePaid: 0,
+      requirementsFiles: [],
+      sku: "",
+      qty: 0,
+      phone: "",
+      deliveryCode: "",
+      deliveryStatus: "Dispatched",
+    };
   });
 
-  const [selectedProducts, setSelectedProducts] = useState<ConfiguredProduct[]>([]);
+  // Initialize selected products with localStorage persistence
+  const [selectedProducts, setSelectedProducts] = useState<ConfiguredProduct[]>(() => {
+    if (typeof window === "undefined") {
+      return [];
+    }
+
+    // Check if we're loading an existing order from URL
+    const urlParams = new URLSearchParams(window.location.search);
+    const urlOrderId = urlParams.get('orderId');
+    
+    // If loading an existing order, don't load from localStorage
+    if (urlOrderId) {
+      console.log('Loading existing order from URL, skipping localStorage for selectedProducts');
+      return [];
+    }
+
+    // Try to load from localStorage only for new orders
+    const savedProducts = localStorage.getItem('orderLifecycle_selectedProducts');
+    if (savedProducts) {
+      try {
+        return JSON.parse(savedProducts);
+      } catch (e) {
+        console.warn('Failed to parse saved selected products:', e);
+      }
+    }
+
+    return [];
+  });
+
+  // Auto-save form data to localStorage whenever it changes (only for new orders)
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      const urlParams = new URLSearchParams(window.location.search);
+      const urlOrderId = urlParams.get('orderId');
+      
+      // Only save to localStorage if we're not loading an existing order
+      if (!urlOrderId) {
+        localStorage.setItem('orderLifecycle_formData', JSON.stringify(formData));
+      }
+    }
+  }, [formData]);
+
+  // Auto-save selected products to localStorage whenever they change (only for new orders)
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      const urlParams = new URLSearchParams(window.location.search);
+      const urlOrderId = urlParams.get('orderId');
+      
+      // Only save to localStorage if we're not loading an existing order
+      if (!urlOrderId) {
+        localStorage.setItem('orderLifecycle_selectedProducts', JSON.stringify(selectedProducts));
+      }
+    }
+  }, [selectedProducts]);
+
+  // Auto-save current index to localStorage whenever it changes
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      localStorage.setItem('orderLifecycle_currentIndex', currentIndex.toString());
+    }
+  }, [currentIndex]);
+
   const [showSearchModal, setShowSearchModal] = useState(false);
   const [showConfigModal, setShowConfigModal] = useState(false);
   const [pendingBaseProduct, setPendingBaseProduct] = useState<BaseProduct | null>(null);
@@ -237,7 +396,14 @@ export default function OrderLifecyclePage() {
     setSelectedProducts((prev) => {
       const index = prev.findIndex((item) => item.id === configured.id);
       const next = index >= 0 ? prev.map((item, idx) => (idx === index ? configured : item)) : [...prev, configured];
-      setFormData((prevData: any) => ({ ...prevData, items: serializeSelectedProducts(next) }));
+      
+      // Update formData with the new products list
+      setFormData((prevData: any) => ({ 
+        ...prevData, 
+        items: serializeSelectedProducts(next),
+        products: next // Also update products array for quotation stage
+      }));
+      
       return next;
     });
     // Close the modal and reset state
@@ -248,7 +414,14 @@ export default function OrderLifecyclePage() {
   const handleRemoveProduct = useCallback((id: string) => {
     setSelectedProducts((prev) => {
       const next = prev.filter((item) => item.id !== id);
-      setFormData((prevData: any) => ({ ...prevData, items: serializeSelectedProducts(next) }));
+      
+      // Update formData with the new products list
+      setFormData((prevData: any) => ({ 
+        ...prevData, 
+        items: serializeSelectedProducts(next),
+        products: next // Also update products array for quotation stage
+      }));
+      
       return next;
     });
   }, []);
@@ -283,18 +456,26 @@ export default function OrderLifecyclePage() {
     // Keep the pending product data for when user comes back
   }, []);
   const serializeSelectedProducts = (items: ConfiguredProduct[] = selectedProducts) =>
-    items.map((item) => ({
-      product_id: item.productId,
-      name: item.name,
-      quantity: item.quantity,
-      attributes: item.attributes,
-      sku: item.sku,
-    }));
+    items.map((item) => {
+      const unitPrice = parseFloat(item.price || 0);
+      const quantity = parseInt(item.quantity || 0);
+      const lineTotal = unitPrice * quantity;
+      
+      return {
+        product_id: item.productId,
+        name: item.name,
+        quantity: quantity,
+        attributes: item.attributes,
+        sku: item.sku,
+        unit_price: unitPrice,
+        line_total: lineTotal, // Added line_total calculation
+      };
+    });
   const generateCode = async () => {
     const code = Math.floor(100000 + Math.random() * 900000).toString();
     setDeliveryCode(code);
     setFormData((prev: any) => ({ ...prev, deliveryCode: code }));
-    const apiBase = process.env.NEXT_PUBLIC_API_BASE || "http://localhost:8000";
+    const apiBase = process.env.NEXT_PUBLIC_API_BASE || "http://127.0.0.1:8000";
     const token = typeof window !== "undefined" ? localStorage.getItem("admin_token") : null;
     await fetch(`${apiBase}/api/send-delivery-code`, {
       method: "POST",
@@ -316,11 +497,19 @@ export default function OrderLifecyclePage() {
       return;
     }
     try {
-      const apiBase = process.env.NEXT_PUBLIC_API_BASE || "http://localhost:8000";
+      const apiBase = process.env.NEXT_PUBLIC_API_BASE || "http://127.0.0.1:8000";
       const token = typeof window !== "undefined" ? localStorage.getItem("admin_token") : null;
       const form = new FormData();
       form.append("photo", riderPhoto);
-      form.append("orderId", formData._orderId);
+      form.append("orderId", formData._orderId.toString()); // Ensure it's a string
+      
+      console.log('Uploading rider photo:', {
+        orderId: formData._orderId,
+        photoName: riderPhoto.name,
+        photoSize: riderPhoto.size,
+        photoType: riderPhoto.type
+      });
+      
       const resp = await fetch(`${apiBase}/api/delivery/rider-photo`, {
         method: "POST",
         body: form,
@@ -328,14 +517,20 @@ export default function OrderLifecyclePage() {
           ...(token ? { Authorization: `Bearer ${token}` } : {}),
         },
       });
-      if (!resp.ok) throw new Error(`Upload failed (${resp.status})`);
-      const data = await resp.json();
-      setFormData((p: any) => ({ ...p, riderPhotoPath: data.url }));
-    } catch (e) {
-      toast.error("Photo upload failed");
-      if (process.env.NODE_ENV !== "production") {
-        console.error(e);
+      
+      if (!resp.ok) {
+        const errorText = await resp.text();
+        console.error('Upload failed:', resp.status, errorText);
+        throw new Error(`Upload failed (${resp.status}): ${errorText}`);
       }
+      
+      const data = await resp.json();
+      console.log('Upload successful:', data);
+      setFormData((p: any) => ({ ...p, riderPhotoPath: data.url }));
+      toast.success("Photo uploaded successfully!");
+    } catch (e) {
+      console.error("Photo upload error:", e);
+      toast.error("Photo upload failed");
     }
   };
 
@@ -345,10 +540,10 @@ export default function OrderLifecyclePage() {
       return;
     }
     try {
-      const apiBase = process.env.NEXT_PUBLIC_API_BASE || "http://localhost:8000";
+      const apiBase = process.env.NEXT_PUBLIC_API_BASE || "http://127.0.0.1:8000";
       const token = typeof window !== "undefined" ? localStorage.getItem("admin_token") : null;
       const resp = await fetch(
-        `${apiBase}/api/orders/${formData._orderId}/actions/mark-printed`,
+        `${apiBase}/api/orders/${formData._orderId}/actions/mark-printed/`,
         {
           method: "POST",
           body: JSON.stringify({ sku: formData.sku, qty: formData.qty }),
@@ -367,16 +562,164 @@ export default function OrderLifecyclePage() {
     }
   };
 
+  // Auto-save function for when pressing Next button
+  const handleAutoSave = async (): Promise<boolean> => {
+    try {
+      const apiBase = process.env.NEXT_PUBLIC_API_BASE || "http://127.0.0.1:8000";
+      const token = typeof window !== "undefined" ? localStorage.getItem("admin_token") : null;
+      const headers: any = { "Content-Type": "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}) };
+
+      let orderId = formData._orderId;
+      if (!orderId) {
+        // Create order if it doesn't exist
+        const requestBody = {
+          clientName: formData.clientName,
+          specs: formData.specifications,
+          urgency: formData.urgency,
+          items: serializeSelectedProducts(),
+        };
+        console.log('Creating order with payload:', requestBody);
+        
+        const resp = await fetch(`${apiBase}/api/orders/`, {
+          method: "POST",
+          headers,
+          body: JSON.stringify(requestBody),
+        });
+        
+        if (!resp.ok) {
+          const errorText = await resp.text();
+          console.error('Create order failed:', resp.status, errorText);
+          
+          if (resp.status === 401) {
+            handleUnauthorized();
+            return false;
+          }
+          
+          throw new Error(`Create failed (${resp.status}): ${errorText}`);
+        }
+        const created = await resp.json();
+        console.log('Order created successfully:', created);
+        orderId = created.data?.id || created.id;
+        setFormData((p: any) => ({ ...p, _orderId: orderId }));
+      } else {
+        // Update existing order with current stage data
+        const stageKey = visibleStageKeys[currentIndex];
+        let stage = "" as any;
+        let payload: any = {};
+        
+        if (stageKey === "quotation") {
+          stage = "quotation";
+          payload = {
+            labour_cost: formData.labourCost,
+            finishing_cost: formData.finishingCost,
+            paper_cost: formData.paperCost,
+            design_cost: formData.designCost,
+            delivery_cost: formData.deliveryCost,
+            discount: formData.discount,
+            advance_paid: formData.advancePaid,
+          };
+        }
+        if (stageKey === "designProduction") {
+          stage = "design";
+          payload = {
+            assigned_designer: formData.assignedDesigner,
+            requirements_files: formData.requirementsFiles,
+            design_status: formData.designStatus,
+          };
+        }
+        if (stageKey === "printingQA") {
+          stage = "printing";
+          payload = {
+            print_operator: formData.printOperator,
+            print_time: formData.printTime,
+            batch_info: formData.batchInfo,
+            print_status: formData.printStatus,
+            qa_checklist: formData.qaChecklist,
+          };
+        }
+        if (stageKey === "clientApproval") {
+          stage = "approval";
+          payload = {
+            client_approval_files: formData.clientApprovalFiles,
+            approved_at: formData.approvedAt,
+          };
+        }
+        if (stageKey === "deliveryProcess") {
+          stage = "delivery";
+          payload = {
+            delivery_code: formData.deliveryCode,
+            delivered_at: formData.deliveredAt,
+            rider_photo_path: formData.riderPhotoPath,
+          };
+        }
+        
+        if (stage) {
+          console.log('Updating stage with payload:', { stage, payload });
+          const resp = await fetch(`${apiBase}/api/orders/${orderId}/`, {
+            method: "PATCH",
+            headers,
+            body: JSON.stringify({ stage, payload }),
+          });
+          if (!resp.ok) {
+            if (resp.status === 401) {
+              handleUnauthorized();
+              return false;
+            }
+            const errorText = await resp.text();
+            console.error('Stage update failed:', resp.status, errorText);
+            throw new Error(`Stage update failed (${resp.status}): ${errorText}`);
+          }
+        }
+
+        // Update base order fields
+        const updatePayload = {
+          client_name: formData.clientName,
+          specs: formData.specifications,
+          urgency: formData.urgency,
+          items: serializeSelectedProducts(),
+        };
+        console.log('Updating order with payload:', updatePayload);
+        console.log('Items being sent:', updatePayload.items);
+        console.log('First item structure:', updatePayload.items[0]);
+        
+           const baseUpdate = await fetch(`${apiBase}/api/orders/${orderId}/`, {
+             method: "PATCH",
+             headers,
+             body: JSON.stringify(updatePayload),
+           });
+        
+        if (!baseUpdate.ok) {
+          if (baseUpdate.status === 401) {
+            handleUnauthorized();
+            return false;
+          }
+          const errorText = await baseUpdate.text();
+          console.error('Update order failed:', baseUpdate.status, errorText);
+          
+          // For now, log the error but don't fail the auto-save
+          // This allows the order creation to succeed even if update fails
+          console.warn('Order update failed, but order was created successfully');
+          return true;
+        }
+      }
+
+      return true;
+    } catch (e: any) {
+      console.error("Auto-save failed:", e);
+      return false;
+    }
+  };
+
   const handleSaveOrder = async () => {
     try {
-      const apiBase = process.env.NEXT_PUBLIC_API_BASE || "http://localhost:8000";
+      const apiBase = process.env.NEXT_PUBLIC_API_BASE || "http://127.0.0.1:8000";
       const token = typeof window !== "undefined" ? localStorage.getItem("admin_token") : null;
       const headers: any = { "Content-Type": "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}) };
 
       let orderId = formData._orderId;
       if (!orderId) {
         // Create order
-        const resp = await fetch(`${apiBase}/api/orders`, {
+        const resp = await fetch(`${apiBase}/api/orders/`, {
           method: "POST",
           headers,
           body: JSON.stringify({
@@ -386,9 +729,15 @@ export default function OrderLifecyclePage() {
             items: serializeSelectedProducts(),
           }),
         });
-        if (!resp.ok) throw new Error(`Create failed (${resp.status})`);
+        if (!resp.ok) {
+          if (resp.status === 401) {
+            handleUnauthorized();
+            return;
+          }
+          throw new Error(`Create failed (${resp.status})`);
+        }
         const created = await resp.json();
-        orderId = created.id;
+        orderId = created.data?.id || created.id;
         setFormData((p: any) => ({ ...p, _orderId: orderId }));
       } else {
         // Update current stage payload
@@ -402,7 +751,7 @@ export default function OrderLifecyclePage() {
             finishing_cost: formData.finishingCost,
             paper_cost: formData.paperCost,
             design_cost: formData.designCost,
-            delivery_cost: formData.deleiveryCost,
+            delivery_cost: formData.deliveryCost,
             discount: formData.discount,
             advance_paid: formData.advancePaid,
           };
@@ -441,7 +790,7 @@ export default function OrderLifecyclePage() {
           };
         }
         if (stage) {
-          const resp = await fetch(`${apiBase}/api/orders/${orderId}`, {
+          const resp = await fetch(`${apiBase}/api/orders/${orderId}/`, {
             method: "PATCH",
             headers,
             body: JSON.stringify({ stage, payload }),
@@ -452,7 +801,7 @@ export default function OrderLifecyclePage() {
 
       if (!orderId) throw new Error("Order identifier missing after save");
 
-      const baseUpdate = await fetch(`${apiBase}/api/orders/${orderId}`, {
+      const baseUpdate = await fetch(`${apiBase}/api/orders/${orderId}/`, {
         method: "PATCH",
         headers,
         body: JSON.stringify({
@@ -464,6 +813,25 @@ export default function OrderLifecyclePage() {
       });
       if (!baseUpdate.ok) throw new Error(`Update failed (${baseUpdate.status})`);
       toast.success("Order saved successfully!");
+
+      // Clear localStorage after successful save (only clear form data, keep files and print time)
+      if (typeof window !== "undefined") {
+        localStorage.removeItem('orderLifecycle_formData');
+        localStorage.removeItem('orderLifecycle_selectedProducts');
+        localStorage.removeItem('orderLifecycle_currentIndex');
+        
+        // Clear intake files and client approval files (these are stage-specific)
+        clearFilesFromStorage('orderLifecycle_intakeFiles');
+        clearFilesFromStorage('orderLifecycle_clientApprovalFiles');
+        
+        // Clear design files for all products
+        for (let i = 1; i <= 30; i++) {
+          clearFilesFromStorage(`orderLifecycle_designFiles_${i}`);
+        }
+        
+        // DO NOT clear requirements files, rider photo, or print time
+        // These should persist across order saves
+      }
 
       // After final stage, redirect user and flash confirmation
       if (currentIndex === stages.length - 1 && orderId) {
@@ -485,15 +853,225 @@ export default function OrderLifecyclePage() {
   const [busyDraft, setBusyDraft] = useState(false);
   const [busySend, setBusySend] = useState(false);
 
+  // Function to clear localStorage (for new orders)
+  const clearLocalStorage = () => {
+    if (typeof window !== "undefined") {
+      localStorage.removeItem('orderLifecycle_formData');
+      localStorage.removeItem('orderLifecycle_selectedProducts');
+      localStorage.removeItem('orderLifecycle_currentIndex');
+      
+      // Clear all file storage
+      clearFilesFromStorage('orderLifecycle_intakeFiles');
+      clearFilesFromStorage('orderLifecycle_requirementsFiles');
+      clearFilesFromStorage('orderLifecycle_clientApprovalFiles');
+      clearFilesFromStorage('orderLifecycle_riderPhoto');
+      
+      // Clear design files for all products (we'll clear all keys that start with the pattern)
+      for (let i = 1; i <= 30; i++) { // Assuming we have products with IDs 1-30
+        clearFilesFromStorage(`orderLifecycle_designFiles_${i}`);
+      }
+      
+      // Clear print time
+      localStorage.removeItem('orderLifecycle_printTime');
+    }
+  };
+
+  // Function to handle 401 errors
+  const handleUnauthorized = () => {
+    toast.error("Unauthorized: Please log in again");
+    if (typeof window !== "undefined") {
+      localStorage.removeItem("admin_token");
+    }
+  };
+
+  // Load existing order data when orderId is present in URL or formData
+  useEffect(() => {
+    const loadOrderData = async () => {
+      // Check for orderId in URL params first, then formData
+      const urlParams = new URLSearchParams(window.location.search);
+      const urlOrderId = urlParams.get('orderId');
+      const orderId = urlOrderId || formData._orderId;
+      
+      if (!orderId) return;
+
+      try {
+        const apiBase = process.env.NEXT_PUBLIC_API_BASE || "http://127.0.0.1:8000";
+        const token = typeof window !== "undefined" ? localStorage.getItem("admin_token") : null;
+        const headers: any = { "Content-Type": "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}) };
+
+        console.log('Loading order data - API Base:', apiBase);
+        console.log('Loading order data - Order ID:', orderId);
+        console.log('Loading order data - URL:', `${apiBase}/api/orders/${orderId}/`);
+        console.log('Loading order data - Headers:', headers);
+
+        const response = await fetch(`${apiBase}/api/orders/${orderId}/`, {
+          method: "GET",
+          headers,
+        });
+
+        console.log('Loading order data - Response status:', response.status);
+        console.log('Loading order data - Response ok:', response.ok);
+
+        if (response.ok) {
+          const orderData = await response.json();
+          const order = orderData.data || orderData;
+          
+          console.log('Loading order data:', order);
+
+          // Update formData with loaded order data
+          setFormData((prev: any) => {
+            const newFormData = {
+              ...prev,
+              _orderId: orderId, // Ensure orderId is set
+              clientName: order.client_name || prev.clientName,
+              specifications: order.specs || prev.specifications,
+              urgency: order.urgency || prev.urgency,
+              items: order.items || prev.items,
+              products: order.items || prev.products, // Map items to products for quotation
+              status: order.status || prev.status,
+              stage: order.stage || prev.stage,
+              orderCode: order.order_code || prev.orderCode,
+              // Load quotation data if available
+              labourCost: order.quotation?.labour_cost || prev.labourCost,
+              finishingCost: order.quotation?.finishing_cost || prev.finishingCost,
+              paperCost: order.quotation?.paper_cost || prev.paperCost,
+              machineCost: order.quotation?.machine_cost || prev.machineCost,
+              designCost: order.quotation?.design_cost || prev.designCost,
+              deliveryCost: order.quotation?.delivery_cost || prev.deliveryCost,
+              discount: order.quotation?.discount || prev.discount,
+              advancePaid: order.quotation?.advance_paid || prev.advancePaid,
+              // Load design data if available
+              assignedDesigner: order.design_stage?.assigned_designer || prev.assignedDesigner,
+              requirementsFiles: order.design_stage?.requirements_files_manifest || prev.requirementsFiles,
+              designStatus: order.design_stage?.design_status || prev.designStatus,
+              // Load printing data if available
+              printOperator: order.printing_stage?.print_operator || prev.printOperator,
+              printTime: order.printing_stage?.print_time || prev.printTime,
+              batchInfo: order.printing_stage?.batch_info || prev.batchInfo,
+              printStatus: order.printing_stage?.print_status || prev.printStatus,
+              qaChecklist: order.printing_stage?.qa_checklist || prev.qaChecklist,
+              // Load approval data if available
+              clientApprovalFiles: order.approval_stage?.client_approval_files || prev.clientApprovalFiles,
+              approvedAt: order.approval_stage?.approved_at || prev.approvedAt,
+              // Load delivery data if available
+              deliveryCode: order.delivery_code || prev.deliveryCode,
+              deliveredAt: order.delivery_stage?.delivered_at || prev.deliveredAt,
+              riderPhotoPath: order.delivery_stage?.rider_photo_path || prev.riderPhotoPath,
+            };
+            
+            console.log('Updated formData:', newFormData);
+            return newFormData;
+          });
+
+          // Update selected products for order intake stage
+          if (order.items && order.items.length > 0) {
+            const configuredProducts: ConfiguredProduct[] = order.items.map((item: any) => {
+              // Find the base product to get the imageUrl
+              const baseProduct = getProductById(item.product_id);
+              
+              return {
+                id: item.id || Math.random().toString(),
+                productId: item.product_id || "",
+                name: item.name || "",
+                quantity: item.quantity || 0,
+                attributes: item.attributes || {},
+                sku: item.sku || "",
+                price: item.unit_price || 0, // Fixed: use 'price' field, not 'unitPrice'
+                imageUrl: baseProduct?.imageUrl || "", // Get imageUrl from base product
+              };
+            });
+            console.log('Updated selectedProducts:', configuredProducts);
+            setSelectedProducts(configuredProducts);
+          }
+        } else {
+          const errorText = await response.text();
+          console.error('Failed to load order data:', response.status, errorText);
+          toast.error(`Failed to load order data: ${response.status}`);
+        }
+      } catch (error) {
+        console.error("Error loading order data:", error);
+        toast.error("Error loading order data");
+      }
+    };
+
+    loadOrderData();
+  }, [formData._orderId, typeof window !== 'undefined' ? window.location.search : '']);
+
+  // Also load data when URL changes
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      const urlParams = new URLSearchParams(window.location.search);
+      const urlOrderId = urlParams.get('orderId');
+      if (urlOrderId && urlOrderId !== formData._orderId) {
+        setFormData((prev: any) => ({ ...prev, _orderId: urlOrderId }));
+      }
+    }
+  }, []);
+
+  // Handle URL changes on client side
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      const handleUrlChange = () => {
+        const urlParams = new URLSearchParams(window.location.search);
+        const urlOrderId = urlParams.get('orderId');
+        if (urlOrderId && urlOrderId !== formData._orderId) {
+          setFormData((prev: any) => ({ ...prev, _orderId: urlOrderId }));
+        }
+      };
+
+      // Listen for URL changes
+      window.addEventListener('popstate', handleUrlChange);
+      
+      // Check URL on mount
+      handleUrlChange();
+
+      return () => {
+        window.removeEventListener('popstate', handleUrlChange);
+      };
+    }
+  }, [formData._orderId]);
+
+  // Set current stage based on loaded order data
+  useEffect(() => {
+    if (formData.stage) {
+      const stageIndex = visibleStageKeys.findIndex(key => {
+        const stageMap: Record<string, string> = {
+          'order_intake': 'orderIntake',
+          'quotation': 'quotation',
+          'design': 'designProduction',
+          'printing': 'printingQA',
+          'approval': 'clientApproval',
+          'delivery': 'deliveryProcess',
+        };
+        return stageMap[formData.stage] === key;
+      });
+      
+      if (stageIndex !== -1) {
+        setCurrentIndex(stageIndex);
+      }
+    }
+  }, [formData.stage, visibleStageKeys]);
+
+  // Sync selectedProducts to formData so quotation can access them
+  useEffect(() => {
+    if (selectedProducts.length > 0) {
+      setFormData((prev: any) => ({
+        ...prev,
+        products: selectedProducts,
+        items: selectedProducts,
+      }));
+    }
+  }, [selectedProducts]);
+
   const ensureOrderExists = async (): Promise<number | null> => {
     try {
-      const apiBase = process.env.NEXT_PUBLIC_API_BASE || "http://localhost:8000";
+      const apiBase = process.env.NEXT_PUBLIC_API_BASE || "http://127.0.0.1:8000";
       const token = typeof window !== "undefined" ? localStorage.getItem("admin_token") : null;
       const headers: any = { "Content-Type": "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}) };
 
       let orderId = formData._orderId;
       if (!orderId) {
-        const resp = await fetch(`${apiBase}/api/orders`, {
+        const resp = await fetch(`${apiBase}/api/orders/`, {
           method: "POST",
           headers,
           body: JSON.stringify({
@@ -505,7 +1083,7 @@ export default function OrderLifecyclePage() {
         });
         if (!resp.ok) throw new Error(`Create failed (${resp.status})`);
         const created = await resp.json();
-        orderId = created.id;
+        orderId = created.data?.id || created.id;
         setFormData((p: any) => ({ ...p, _orderId: orderId }));
       }
       return orderId || null;
@@ -519,7 +1097,7 @@ export default function OrderLifecyclePage() {
     if (busyDraft) return;
     setBusyDraft(true);
     try {
-      const apiBase = process.env.NEXT_PUBLIC_API_BASE || "http://localhost:8000";
+      const apiBase = process.env.NEXT_PUBLIC_API_BASE || "http://127.0.0.1:8000";
       const token = typeof window !== "undefined" ? localStorage.getItem("admin_token") : null;
       const headers: any = { "Content-Type": "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}) };
 
@@ -527,7 +1105,7 @@ export default function OrderLifecyclePage() {
       if (!orderId) return;
 
       // Best-effort sync of basic fields if order already existed
-      const resp = await fetch(`${apiBase}/api/orders/${orderId}`, {
+      const resp = await fetch(`${apiBase}/api/orders/${orderId}/`, {
         method: "PATCH",
         headers,
         body: JSON.stringify({
@@ -539,6 +1117,14 @@ export default function OrderLifecyclePage() {
         }),
       });
       if (!resp.ok) throw new Error(`Update failed (${resp.status})`);
+      
+      // Update formData with selectedProducts so quotation can access them
+      setFormData((prev: any) => ({
+        ...prev,
+        products: selectedProducts,
+        items: selectedProducts,
+      }));
+      
       toast.success("Draft saved");
     } catch (e: any) {
       toast.error(e?.message || "Failed to save draft");
@@ -551,7 +1137,7 @@ export default function OrderLifecyclePage() {
     if (busySend) return;
     setBusySend(true);
     try {
-      const apiBase = process.env.NEXT_PUBLIC_API_BASE || "http://localhost:8000";
+      const apiBase = process.env.NEXT_PUBLIC_API_BASE || "http://127.0.0.1:8000";
       const token = typeof window !== "undefined" ? localStorage.getItem("admin_token") : null;
       const headers: any = { "Content-Type": "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}) };
 
@@ -559,12 +1145,20 @@ export default function OrderLifecyclePage() {
       if (!orderId) return;
 
       // Move to quotation stage (Sales)
-      const resp = await fetch(`${apiBase}/api/orders/${orderId}`, {
+      const resp = await fetch(`${apiBase}/api/orders/${orderId}/`, {
         method: "PATCH",
         headers,
         body: JSON.stringify({ stage: "quotation", payload: {} }),
       });
       if (!resp.ok) throw new Error(`Stage update failed (${resp.status})`);
+      
+      // Update formData with selectedProducts so quotation can access them
+      setFormData((prev: any) => ({
+        ...prev,
+        products: selectedProducts,
+        items: selectedProducts,
+      }));
+      
       toast.success("Sent to Sales");
     } catch (e: any) {
       toast.error(e?.message || "Failed to send to Sales");
@@ -602,6 +1196,17 @@ export default function OrderLifecyclePage() {
   const currentStageKey = visibleStageKeys[currentIndex];
   const currentTabValue = stages[currentIndex];
 
+  // Prevent hydration mismatch by only rendering on client
+  if (!isClient) {
+    return (
+      <div className="p-6 space-y-8 bg-gray-50 min-h-screen text-black">
+        <div className="flex items-center justify-center h-64">
+          <div className="text-lg">Loading...</div>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="p-6 space-y-8 bg-gray-50 min-h-screen text-black">
       <Toaster position="top-center" />
@@ -615,6 +1220,47 @@ export default function OrderLifecyclePage() {
           <span className="text-sm rounded-full px-3 py-1 bg-neutral-100 border">
             Role: <strong className="ml-1 capitalize">{role}</strong>
           </span>
+
+          {/* New Order Button */}
+          <Button
+            variant="outline"
+            onClick={() => {
+              if (confirm("Are you sure you want to start a new order? This will clear all current data.")) {
+                clearLocalStorage();
+                setFormData({
+                  clientName: "",
+                  specifications: "",
+                  urgency: "",
+                  items: [],
+                  products: [],
+                  status: "New",
+                  rawMaterialCost: 0,
+                  labourCost: 0,
+                  finishingCost: 0,
+                  paperCost: 0,
+                  inkCost: 0,
+                  machineCost: 0,
+                  designCost: 0,
+                  packagingCost: 0,
+                  deliveryCost: 0,
+                  discount: 0,
+                  advancePaid: 0,
+                  requirementsFiles: [],
+                  sku: "",
+                  qty: 0,
+                  phone: "",
+                  deliveryCode: "",
+                  deliveryStatus: "Dispatched",
+                });
+                setSelectedProducts([]);
+                setCurrentIndex(0);
+                toast.success("New order started");
+              }
+            }}
+            className="bg-white text-[#891F1A] border border-[#891F1A]/30 hover:bg-[#891F1A] hover:text-white transition px-4 py-2 rounded"
+          >
+            New Order
+          </Button>
 
           {/* View Table (role-aware) */}
           {TABLE_ROUTES[role] && (
@@ -643,13 +1289,28 @@ export default function OrderLifecyclePage() {
             <div key={stage} className="flex-1 text-center relative z-10 text-black">
               <div
                 className="flex flex-col items-center cursor-pointer group"
-                onClick={() => {
+                onClick={async () => {
                   if (i < currentIndex) {
                     setCurrentIndex(i);
+                    // Update localStorage when moving to previous stage
+                    if (typeof window !== "undefined") {
+                      localStorage.setItem('orderLifecycle_currentIndex', i.toString());
+                    }
                   } else if (i === currentIndex) {
                     // noop
                   } else if (validateCurrentStage()) {
-                    setCurrentIndex(i);
+                    // Auto-save before moving to next stage
+                    const saved = await handleAutoSave();
+                    if (saved) {
+                      setCurrentIndex(i);
+                      // Update localStorage when moving to next stage
+                      if (typeof window !== "undefined") {
+                        localStorage.setItem('orderLifecycle_currentIndex', i.toString());
+                      }
+                      toast.success("Progress saved and moved to next stage");
+                    } else {
+                      toast.error("Failed to save data. Please try again.");
+                    }
                   }
                 }}
               >
@@ -686,12 +1347,28 @@ export default function OrderLifecyclePage() {
             <TabsTrigger
               key={stageLabel}
               value={stageLabel}
-              onClick={() => {
-                if (idx < currentIndex) setCurrentIndex(idx);
-                else if (idx === currentIndex) {
+              onClick={async () => {
+                if (idx < currentIndex) {
+                  setCurrentIndex(idx);
+                  // Update localStorage when moving to previous stage
+                  if (typeof window !== "undefined") {
+                    localStorage.setItem('orderLifecycle_currentIndex', idx.toString());
+                  }
+                } else if (idx === currentIndex) {
                   // noop
                 } else if (validateCurrentStage()) {
-                  setCurrentIndex(idx);
+                  // Auto-save before moving to next stage
+                  const saved = await handleAutoSave();
+                  if (saved) {
+                    setCurrentIndex(idx);
+                    // Update localStorage when moving to next stage
+                    if (typeof window !== "undefined") {
+                      localStorage.setItem('orderLifecycle_currentIndex', idx.toString());
+                    }
+                    toast.success("Progress saved and moved to next stage");
+                  } else {
+                    toast.error("Failed to save data. Please try again.");
+                  }
                 }
               }}
               className={`transition ${currentIndex === idx ? "bg-black text-white" : ""}`}
@@ -731,26 +1408,49 @@ export default function OrderLifecyclePage() {
                   <Button
                     variant="outline"
                     className="w-full flex items-center justify-center gap-2 border border-gray-300 text-black transition-all duration-200 hover:bg-red-900 hover:text-white"
-                    onClick={() => setCurrentIndex((prev) => Math.max(prev - 1, 0))}
+                    onClick={() => {
+                      const newIndex = Math.max(currentIndex - 1, 0);
+                      setCurrentIndex(newIndex);
+                      // Update localStorage when moving to previous stage
+                      if (typeof window !== "undefined") {
+                        localStorage.setItem('orderLifecycle_currentIndex', newIndex.toString());
+                      }
+                    }}
                   >
-                    â† Back
+                    ← Back
                   </Button>
 
                   {currentIndex < stages.length - 1 ? (
                     <Button
                       className="w-full flex items-center justify-center gap-2 bg-[#891F1A] text-white hover:bg-red-800 transition-all duration-200"
-                      onClick={() => {
-                        if (validateCurrentStage()) setCurrentIndex((prev) => prev + 1);
+                      onClick={async () => {
+                        if (validateCurrentStage()) {
+                          // Auto-save before moving to next stage
+                          const saved = await handleAutoSave();
+                          if (saved) {
+                            const newIndex = currentIndex + 1;
+                            setCurrentIndex(newIndex);
+                            
+                            // Update localStorage with new stage
+                            if (typeof window !== "undefined") {
+                              localStorage.setItem('orderLifecycle_currentIndex', newIndex.toString());
+                            }
+                            
+                            toast.success("Progress saved and moved to next stage");
+                          } else {
+                            toast.error("Failed to save data. Please try again.");
+                          }
+                        }
                       }}
                     >
-                      Next â†’
+                      Next →
                     </Button>
                   ) : (
                     <Button
                       className="w-full flex items-center justify-center gap-2 bg-[#891F1A] text-white hover:bg-red-900 transition-all duration-200"
                       onClick={handleSaveOrder}
                     >
-                      âœ… Save Order
+                      ✓ Save Order
                     </Button>
                   )}
                 </div>

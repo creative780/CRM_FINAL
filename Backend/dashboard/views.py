@@ -126,7 +126,7 @@ def dashboard_recent_activity(request):
     for order in recent_orders:
         orders_data.append({
             'id': order.id,
-            'title': order.order_id,
+            'title': order.order_code,
             'stage': order.stage,
             'status': order.status,
             'created_at': order.created_at,

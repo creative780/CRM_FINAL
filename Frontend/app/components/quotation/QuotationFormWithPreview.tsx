@@ -30,7 +30,9 @@ export default function QuotationFormWithPreview({ formData, setFormData }: Prop
             </label>
             <textarea
               value={formData.quotationNotes || ""}
-              onChange={(e) => setFormData({ ...formData, quotationNotes: e.target.value })}
+              onChange={(e) => {
+                setFormData({ ...formData, quotationNotes: e.target.value });
+              }}
               rows={4}
               className="w-full border border-gray-300 rounded px-3 py-2 focus:outline-none focus:ring-2 focus:ring-black resize-none"
               placeholder="Enter details..."
@@ -44,7 +46,9 @@ export default function QuotationFormWithPreview({ formData, setFormData }: Prop
               <input
                 type="text"
                 value={formData.clientName || ""}
-                onChange={(e) => setFormData({ ...formData, clientName: e.target.value })}
+                onChange={(e) => {
+                  setFormData({ ...formData, clientName: e.target.value });
+                }}
                 placeholder="e.g., Ali Khan"
                 className="w-full border border-gray-300 rounded px-3 py-2 focus:outline-none focus:ring-2 focus:ring-black"
               />
@@ -95,7 +99,7 @@ export default function QuotationFormWithPreview({ formData, setFormData }: Prop
               { label: "Paper/Material Cost", key: "paperCost" },
               { label: "Machine Usage Cost", key: "machineCost" },
               { label: "Design Complexity Cost", key: "designCost" },
-              { label: "Delivery Cost", key: "deleiveryCost" },
+              { label: "Delivery Cost", key: "deliveryCost" },
               { label: "Other Charges", key: "otherCharges" },
               { label: "Discount", key: "discount" },
             ].map(({ label, key }) => (
@@ -133,12 +137,13 @@ export default function QuotationFormWithPreview({ formData, setFormData }: Prop
                 inputMode="decimal"
                 min="0"
                 value={formData.advancePaid ?? ""}
-                onChange={(e) =>
+                onChange={(e) => {
+                  const val = e.target.value;
                   setFormData({
                     ...formData,
-                    advancePaid: e.target.value === "" ? "" : parseFloat(e.target.value) || 0,
-                  })
-                }
+                    advancePaid: val === "" ? "" : parseFloat(val) || 0,
+                  });
+                }}
                 className="w-full border border-gray-300 rounded px-3 py-2 focus:outline-none focus:ring-2 focus:ring-black"
                 placeholder="0"
               />
@@ -186,26 +191,11 @@ export default function QuotationFormWithPreview({ formData, setFormData }: Prop
                 })
               }
               className="w-full border border-gray-300 rounded px-3 py-2 focus:outline-none focus:ring-2 focus:ring-black"
-              placeholder="0"
+              placeholder="Enter final price..."
             />
           </div>
 
-          {/* Save */}
-          <div className="flex justify-between pt-2">
-            <button
-              onClick={() => {
-                try {
-                  toast.success("Quotation saved (in memory only)");
-                } catch (err) {
-                  console.error(err);
-                  toast.error("Failed to save quotation");
-                }
-              }}
-              className="bg-[#891F1A] hover:bg-red-700 text-white font-medium px-6 py-2 rounded shadow"
-            >
-              Save
-            </button>
-          </div>
+          {/* Save button removed - saving is handled by parent component */}
         </Card>
       </div>
 

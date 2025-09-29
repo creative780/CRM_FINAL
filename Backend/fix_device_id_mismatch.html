@@ -1,0 +1,141 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Fix Device ID Mismatch</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 40px; background: #f5f5f5; }
+        .container { background: white; padding: 30px; border-radius: 8px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); max-width: 600px; margin: 0 auto; }
+        .success { color: #28a745; font-weight: bold; }
+        .error { color: #dc3545; font-weight: bold; }
+        .info { color: #007bff; font-weight: bold; }
+        .instructions { margin-top: 20px; padding: 15px; background: #e9ecef; border-radius: 4px; }
+        button { background: #007bff; color: white; border: none; padding: 10px 20px; border-radius: 4px; cursor: pointer; margin: 5px; }
+        button:hover { background: #0056b3; }
+        .code { background: #f8f9fa; padding: 10px; border-radius: 4px; font-family: monospace; font-size: 12px; margin: 10px 0; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Fix Device ID Mismatch</h1>
+        
+        <div class="instructions">
+            <h3>🚨 PROBLEM IDENTIFIED:</h3>
+            <p><strong>Device ID Mismatch!</strong></p>
+            <p>Backend expects: <code>dev_e233234e6315</code></p>
+            <p>localStorage has: <code>cd70b0b6-4ea1-45cf-8e27-3ccbdfd67f0e</code></p>
+        </div>
+        
+        <div class="instructions">
+            <h3>Current localStorage Values:</h3>
+            <p>device_id: <span id="device-id-status" class="code">Not set</span></p>
+            <p>attendance_device_id: <span id="attendance-device-id-status" class="code">Not set</span></p>
+        </div>
+        
+        <div class="instructions">
+            <h3>SOLUTION:</h3>
+            <ol>
+                <li>Click "Fix Device ID" button below</li>
+                <li>Go to <a href="http://localhost:3000/admin/login" target="_blank">http://localhost:3000/admin/login</a></li>
+                <li>Try logging in</li>
+                <li>Check console for debug messages</li>
+            </ol>
+        </div>
+        
+        <div class="instructions">
+            <h3>Actions:</h3>
+            <button onclick="fixDeviceId()">Fix Device ID</button>
+            <button onclick="checkLocalStorage()">Check localStorage</button>
+            <button onclick="testLogin()">Test Login</button>
+            <div id="result"></div>
+        </div>
+        
+        <div class="instructions">
+            <h3>Expected Result:</h3>
+            <p>After fixing, you should see in console:</p>
+            <div class="code">
+DEBUG: localStorage values: {
+  device_id: "dev_e233234e6315",
+  attendance_device_id: "cd70b0b6-4ea1-45cf-8e27-3ccbdfd67f0e",
+  attendance_device_name: "admin.test",
+  deviceId: "dev_e233234e6315",
+  deviceName: "admin.test"
+}
+DEBUG: Added X-Device-ID header: dev_e233234e6315
+            </div>
+        </div>
+    </div>
+    
+    <script>
+        const CORRECT_DEVICE_ID = 'dev_e233234e6315';
+        const WRONG_DEVICE_ID = 'cd70b0b6-4ea1-45cf-8e27-3ccbdfd67f0e';
+        
+        function updateStatus() {
+            const deviceId = localStorage.getItem('device_id');
+            const attendanceDeviceId = localStorage.getItem('attendance_device_id');
+            
+            document.getElementById('device-id-status').textContent = deviceId || 'Not set';
+            document.getElementById('attendance-device-id-status').textContent = attendanceDeviceId || 'Not set';
+        }
+        
+        function fixDeviceId() {
+            try {
+                // Set the correct device ID
+                localStorage.setItem('device_id', CORRECT_DEVICE_ID);
+                
+                // Keep the old one for reference
+                if (!localStorage.getItem('attendance_device_id')) {
+                    localStorage.setItem('attendance_device_id', WRONG_DEVICE_ID);
+                }
+                
+                document.getElementById('result').innerHTML = '<div class="success">✅ Device ID fixed! Now try logging in.</div>';
+                updateStatus();
+            } catch (e) {
+                document.getElementById('result').innerHTML = '<div class="error">❌ Failed to fix device ID: ' + e.message + '</div>';
+            }
+        }
+        
+        function checkLocalStorage() {
+            updateStatus();
+            document.getElementById('result').innerHTML = '<div class="info">ℹ️ localStorage values updated above</div>';
+        }
+        
+        async function testLogin() {
+            const deviceId = localStorage.getItem('device_id') || localStorage.getItem('attendance_device_id');
+            if (!deviceId) {
+                document.getElementById('result').innerHTML = '<div class="error">❌ No device ID found. Please fix it first.</div>';
+                return;
+            }
+            
+            try {
+                document.getElementById('result').innerHTML = '<div class="info">🔄 Testing login...</div>';
+                
+                const response = await fetch('http://localhost:8000/api/auth/login', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-Device-ID': deviceId
+                    },
+                    body: JSON.stringify({
+                        username: 'abdullah',
+                        password: 'abdullah',
+                        role: 'sales'
+                    })
+                });
+                
+                const data = await response.json();
+                
+                if (response.ok) {
+                    document.getElementById('result').innerHTML = '<div class="success">✅ Login test successful! Device ID: ' + deviceId + '</div>';
+                } else {
+                    document.getElementById('result').innerHTML = '<div class="error">❌ Login test failed: ' + (data.error || 'Unknown error') + '</div>';
+                }
+            } catch (e) {
+                document.getElementById('result').innerHTML = '<div class="error">❌ Network error: ' + e.message + '</div>';
+            }
+        }
+        
+        // Update status on page load
+        updateStatus();
+    </script>
+</body>
+</html>

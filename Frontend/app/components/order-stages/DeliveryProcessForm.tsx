@@ -1,9 +1,10 @@
 "use client";
 
-import React from "react";
+import React, { useEffect } from "react";
 import { Button } from "../Button";
 import { Card } from "../Card";
 import { Separator } from "../Separator";
+import { saveFileMetaToStorage, loadFileMetaFromStorage, clearFilesFromStorage } from "@/app/lib/fileStorage";
 
 interface Props {
   formData: any;
@@ -26,6 +27,36 @@ export default function DeliveryProcessForm({
   handleUpload,
   canGenerate,
 }: Props) {
+  // Load rider photo from localStorage on component mount
+  useEffect(() => {
+    console.log('DeliveryProcessForm: Loading rider photo from localStorage');
+    // Use the safe file storage function that handles quota limits
+    import('@/app/lib/fileStorage').then(({ loadFilesFromStorageSafe }) => {
+      const storedRiderPhotos = loadFilesFromStorageSafe('orderLifecycle_riderPhoto');
+      console.log('DeliveryProcessForm: Stored rider photos:', storedRiderPhotos);
+      console.log('DeliveryProcessForm: Current riderPhoto:', riderPhoto);
+      if (storedRiderPhotos.length > 0 && !riderPhoto) {
+        console.log('DeliveryProcessForm: Setting rider photo from localStorage');
+        setRiderPhoto(storedRiderPhotos[0]);
+      }
+    });
+  }, [riderPhoto]);
+
+  // Save rider photo to localStorage whenever it changes
+  useEffect(() => {
+    console.log('DeliveryProcessForm: Saving rider photo to localStorage:', riderPhoto);
+    if (riderPhoto) {
+      // Use the safe file storage function that handles quota limits
+      import('@/app/lib/fileStorage').then(({ saveFilesToStorageSafe }) => {
+        saveFilesToStorageSafe('orderLifecycle_riderPhoto', [riderPhoto]);
+        console.log('DeliveryProcessForm: Rider photo saved successfully');
+      });
+    } else {
+      clearFilesFromStorage('orderLifecycle_riderPhoto');
+      console.log('DeliveryProcessForm: Rider photo cleared from localStorage');
+    }
+  }, [riderPhoto]);
+
   return (
     <Card className="text-black bg-white shadow-md rounded-xl p-6 md:p-8 space-y-6 w-full border-0">
       <h2 className="text-xl font-bold text-gray-900">Secure Delivery</h2>

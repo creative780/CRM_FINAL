@@ -114,27 +114,27 @@ export default function QuotationPreview({ formData }: any) {
   const discount = parseFloat(formData.discount) || 0;
   const advancePaid = parseFloat(formData.advancePaid) || 0;
 
-  const productsData: Record<string, number> = {
-    "Canvas Print": 50.0,
-    "Custom Calendar": 30.0,
-    "Flyer A5": 0.5,
-    "Business Cards": 0.3,
-    "Mug": 20.0,
-    "Poster": 15.0,
-    "Brochure": 10.0,
-  };
+  // Use actual order items instead of hardcoded data
+  const selectedProducts: any[] = formData.products || formData.items || [];
 
-  const selectedProducts: { name: string; quantity: number }[] = formData.products || [];
+
+
 
   const productLines = selectedProducts.map((p) => {
-    const unitPrice = productsData[p.name] || 0;
-    const quantity = p.quantity || 0;
+    // Handle multiple price field names (unitPrice, unit_price, price, unitCost, cost)
+    const unitPrice = parseFloat(p.unitPrice || p.unit_price || p.price || p.unitCost || p.cost || 0);
+    const quantity = parseInt(p.quantity || 0);
+    
     return {
-      ...p,
-      unitPrice,
+      name: p.name || '',
+      quantity: quantity,
+      unitPrice: unitPrice,
       lineTotal: quantity * unitPrice,
     };
   });
+
+
+
 
   const productSubtotal = productLines.reduce((sum, p) => sum + p.lineTotal, 0);
   const otherSubtotal = labour + finishing + paper + machine + design + delivery + otherCharges;
@@ -244,10 +244,10 @@ export default function QuotationPreview({ formData }: any) {
                   <td className="border border-gray-400 px-2 py-1">{item.name}</td>
                   <td className="border border-gray-400 px-2 py-1 text-center">{item.quantity}</td>
                   <td className="border border-gray-400 px-2 py-1 text-right">
-                    {item.unitPrice?.toFixed?.(2) || ""}
+                    {typeof item.unitPrice === 'number' ? item.unitPrice.toFixed(2) : (item.unitPrice || "")}
                   </td>
                   <td className="border border-gray-400 px-2 py-1 text-right">
-                    {item.lineTotal?.toFixed?.(2) || ""}
+                    {typeof item.lineTotal === 'number' ? item.lineTotal.toFixed(2) : (item.lineTotal || "")}
                   </td>
                 </tr>
               ))}

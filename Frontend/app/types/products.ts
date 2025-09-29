@@ -6,12 +6,13 @@ export interface BaseProduct {
   imageUrl?: string;
   defaultPrice?: number;  // default unit price
   stock?: number;         // available stock quantity
+  stockThreshold?: number; // minimum stock threshold
 }
 
 export interface ProductAttribute {
   key: string; // "size", "color"
   label: string; // "Size", "Color"
-  options: Array<{ value: string; label: string }>;
+  options: Array<{ value: string; label: string; priceDelta?: number }>;
 }
 
 export interface ConfiguredProduct {

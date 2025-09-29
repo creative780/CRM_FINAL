@@ -126,6 +126,43 @@ const LoginPage = () => {
     })();
   }, []);
 
+  // Function to fetch device ID from agent API (always fresh, no localStorage)
+  const fetchDeviceIdFromAgent = async (): Promise<string | null> => {
+    const agentUrls = [
+      'http://127.0.0.1:47114/device-id',
+      'http://localhost:47114/device-id',
+      'http://127.0.0.1:47113/device-id',
+      'http://localhost:47113/device-id'
+    ];
+    
+    for (const url of agentUrls) {
+      try {
+        const controller = new AbortController();
+        const timeout = setTimeout(() => controller.abort(), 2000); // Increased timeout
+        
+        const response = await fetch(url, { 
+          signal: controller.signal,
+          method: 'GET'
+        });
+        
+        clearTimeout(timeout);
+        
+        if (response.ok) {
+          const data = await response.json();
+          if (data.device_id && data.status === 'active') {
+            console.log('✅ Got device ID from agent:', data.device_id);
+            return data.device_id;
+          }
+        }
+      } catch (error) {
+        console.debug('❌ Agent not reachable at', url);
+      }
+    }
+    
+    console.warn('⚠️ No agent found - device ID will be null');
+    return null;
+  };
+
   const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     if (busyRef.current) return;
@@ -146,25 +183,76 @@ const LoginPage = () => {
       const role: Role = selectedRole || DEFAULT_ROLE;
       const apiBase = process.env.NEXT_PUBLIC_API_BASE || "http://localhost:8000";
       const headers: Record<string, string> = { "Content-Type": "application/json" };
-      try {
-        const deviceId = typeof window !== 'undefined' ? (localStorage.getItem('attendance_device_id') || '') : '';
-        const deviceName = typeof window !== 'undefined' ? (localStorage.getItem('attendance_device_name') || '') : '';
-        if (deviceId) headers['X-Device-Id'] = deviceId;
-        if (deviceName) headers['X-Device-Name'] = deviceName;
-      } catch {}
+      // ALWAYS fetch device ID from agent API (no localStorage fallback)
+      console.log('🔄 Fetching device ID from agent...');
+      const deviceId = await fetchDeviceIdFromAgent();
+      
+      const deviceName = typeof window !== 'undefined' ? (localStorage.getItem('attendance_device_name') || '') : '';
+      
+      // DEBUG: Log what we're getting
+      console.log('DEBUG: Device ID resolution:', {
+        from_agent: !!deviceId,
+        final_device_id: deviceId,
+        attendance_device_name: deviceName
+      });
+      
+      if (deviceId) {
+        headers['X-Device-ID'] = deviceId;
+        console.log('✅ Added X-Device-ID header:', deviceId);
+      } else {
+        console.log('⚠️ No device ID found - login may fail if agent is required');
+      }
+      if (deviceName) headers['X-Device-Name'] = deviceName;
+      const requestBody = { 
+        username: trimmedUsername, 
+        password: trimmedPassword, 
+        role,
+        device_id: deviceId || undefined,
+        device_name: deviceName || undefined,
+        ip: (typeof window !== 'undefined' ? localStorage.getItem('attendance_device_ip') : null) || undefined,
+      };
+      
+      console.log('Login request:', {
+        url: `${apiBase}/api/auth/login`,
+        headers,
+        body: requestBody
+      });
+      
+      
       const resp = await fetch(`${apiBase}/api/auth/login`, {
         method: "POST",
         headers,
-        body: JSON.stringify({ username: trimmedUsername, password: trimmedPassword, role,
-          device_id: (typeof window !== 'undefined' ? localStorage.getItem('attendance_device_id') : null) || undefined,
-          device_name: (typeof window !== 'undefined' ? localStorage.getItem('attendance_device_name') : null) || undefined,
-          ip: (typeof window !== 'undefined' ? localStorage.getItem('attendance_device_ip') : null) || undefined,
-        }),
+        body: JSON.stringify(requestBody),
       });
+      console.log('Login response status:', resp.status);
+      
       if (!resp.ok) {
         const msg = await resp.json().catch(() => ({} as any));
-        setError((msg as any)?.detail || "Login failed");
-        toast.error((msg as any)?.detail || "Login failed");
+        console.log('Login error response:', msg);
+        
+        // Handle device agent requirement (412 status)
+        if (resp.status === 412) {
+          const enrollmentToken = (msg as any)?.enrollment_token;
+          console.log('412 response received, enrollment token:', enrollmentToken);
+          if (enrollmentToken) {
+            console.log('Device required - redirecting to install-agent with token:', enrollmentToken);
+            try {
+              router.push(`/install-agent?token=${enrollmentToken}`);
+              console.log('Router.push called successfully');
+              return;
+            } catch (error) {
+              console.error('Router.push failed:', error);
+              // Fallback to window.location
+              window.location.href = `/install-agent?token=${enrollmentToken}`;
+              return;
+            }
+          } else {
+            console.error('No enrollment token found in 412 response');
+          }
+        }
+        
+        setError((msg as any)?.detail || (msg as any)?.error || "Login failed");
+        toast.error((msg as any)?.detail || (msg as any)?.error || "Login failed");
         return;
       }
       const data = await resp.json();
@@ -303,6 +391,13 @@ const LoginPage = () => {
               </select>
               <p className="text-white/70 text-xs mt-1">
                 This controls which Order Lifecycle tabs you’ll see after login.
+              </p>
+            </div>
+
+            {/* Device Agent Requirement Notice */}
+            <div className="bg-white/10 rounded-xl p-3 border border-white/20">
+              <p className="text-white/80 text-xs text-center">
+                Device agent required for login.
               </p>
             </div>
 

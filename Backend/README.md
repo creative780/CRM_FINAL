@@ -76,3 +76,24 @@ Environment
 SDK
 
 - Python client at `Backend/activity_log/clients/python/activity_logs_client.py`
+
+Chat Service
+
+- App: `chat`
+- Real-time chat with WebSocket support and HTTP fallbacks
+- Bot integration with pluggable LLM providers
+- Endpoints:
+  - POST `/api/user-response/` (submit user message, get conversation_id)
+  - POST `/api/bot-response/` (get bot response for conversation)
+  - GET `/api/bot-prompts/` (quick-start prompts)
+  - GET `/api/chat/conversations/` (list user conversations)
+  - POST `/api/chat/conversations/` (create conversation)
+  - GET `/api/chat/conversations/{id}/` (conversation details)
+  - GET `/api/chat/conversations/{id}/messages/` (paginated messages)
+  - POST `/api/chat/messages/{id}/read/` (mark as read)
+  - POST `/api/chat/upload/` (file attachments)
+- WebSocket: `ws://host/ws/chat/{conversation_id}/?token={jwt}`
+- Events: `message:new`, `typing`, `read`, `user_joined`, `user_left`
+- Features: typing indicators, read receipts, attachments, markdown rendering
+- Bot service: Echo bot (default), OpenAI/Groq integration ready
+- Frontend: Enhanced ChatBot component with real-time features

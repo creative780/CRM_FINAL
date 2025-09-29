@@ -162,9 +162,121 @@ class LoginView(APIView):
         serializer = LoginSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         user = serializer.validated_data['user']
+        
+        # Check device heartbeat requirement for non-admin users
+        if not user.is_admin():
+            # Get device ID from request headers
+            device_id = request.META.get('HTTP_X_DEVICE_ID')
+            
+            if not device_id:
+                # No device ID provided - block login and provide enrollment token
+                try:
+                    from monitoring.models import Session
+                    from monitoring.auth_utils import create_enrollment_token
+                    
+                    # Create enrollment token for this user
+                    enrollment_token = create_enrollment_token(
+                        user_id=str(user.id),
+                        org_id=user.org_id
+                    )
+                    
+                    # Try to create session, handle missing fields gracefully
+                    try:
+                        Session.objects.create(
+                            user=user,
+                            device=None,
+                            status='PRECONDITION_FAILED'
+                        )
+                    except Exception as e:
+                        logger.warning(f"Failed to create session: {e}")
+                    
+                    return Response(
+                        {
+                            'error': 'Device ID required. Please install and run the monitoring agent.',
+                            'enrollment_token': enrollment_token
+                        },
+                        status=status.HTTP_412_PRECONDITION_FAILED
+                    )
+                except Exception as e:
+                    logger.error(f"Failed to handle missing device ID: {e}")
+                    return Response(
+                        {
+                            'error': 'Device ID required. Please install and run the monitoring agent.',
+                            'enrollment_token': None
+                        },
+                        status=status.HTTP_412_PRECONDITION_FAILED
+                    )
+            
+            # Check if device has recent heartbeat
+            try:
+                from monitoring.auth_utils import check_device_heartbeat_by_id
+                has_recent_heartbeat, device = check_device_heartbeat_by_id(device_id, max_age_minutes=2)
+                
+                if not has_recent_heartbeat:
+                    # No recent heartbeat - block login and provide enrollment token
+                    try:
+                        from monitoring.models import Session
+                        from monitoring.auth_utils import create_enrollment_token
+                        
+                        # Create enrollment token for this user
+                        enrollment_token = create_enrollment_token(
+                            user_id=str(user.id),
+                            org_id=user.org_id
+                        )
+                        
+                        # Try to create session, handle missing fields gracefully
+                        try:
+                            Session.objects.create(
+                                user=user,
+                                device=device,
+                                status='PRECONDITION_FAILED'
+                            )
+                        except Exception as e:
+                            logger.warning(f"Failed to create session: {e}")
+                        
+                        return Response(
+                            {
+                                'error': 'Agent not running or not responding. Please ensure the monitoring agent is running.',
+                                'enrollment_token': enrollment_token
+                            },
+                            status=status.HTTP_412_PRECONDITION_FAILED
+                        )
+                    except Exception as e:
+                        logger.error(f"Failed to handle missing heartbeat: {e}")
+                        return Response(
+                            {
+                                'error': 'Agent not running or not responding. Please ensure the monitoring agent is running.',
+                                'enrollment_token': None
+                            },
+                            status=status.HTTP_412_PRECONDITION_FAILED
+                        )
+                
+                # Device has recent heartbeat - bind device to user and allow login
+                try:
+                    from monitoring.auth_utils import bind_device_to_user
+                    bind_device_to_user(device_id, user)
+                    
+                    # Log session as allowed
+                    try:
+                        from monitoring.models import Session
+                        Session.objects.create(
+                            user=user,
+                            device=device,
+                            status='ALLOWED'
+                        )
+                    except Exception as e:
+                        logger.warning(f"Failed to create session: {e}")
+                except Exception as e:
+                    logger.warning(f"Failed to bind device to user: {e}")
+            except Exception as e:
+                logger.error(f"Failed to check device heartbeat: {e}")
+                # If we can't check heartbeat, allow login but log the issue
+                pass
+        
         user.last_login = timezone.now()
         user.save(update_fields=['last_login'])
         refresh = RefreshToken.for_user(user)
+        
         # log login event (best effort)
         _log_login_event(request, user)
         return Response({

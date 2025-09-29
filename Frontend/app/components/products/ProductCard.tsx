@@ -29,6 +29,7 @@ export default function ProductCard({
   const isResult = mode === "result";
   const isSelected = mode === "selected";
 
+
   return (
     <div
       className={`
@@ -90,7 +91,7 @@ export default function ProductCard({
                   </div>
                   {price !== undefined && (
                     <div className="text-xs text-gray-600">
-                      <span className="text-gray-500">Price:</span> AED {price.toFixed(2)}
+                      <span className="text-gray-500">Price:</span> AED {typeof price === 'number' ? price.toFixed(2) : parseFloat(price || 0).toFixed(2)}
                     </div>
                   )}
                 </div>

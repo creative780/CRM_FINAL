@@ -1,0 +1,90 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Device ID Test</title>
+</head>
+<body>
+    <h1>Device ID Test</h1>
+    <button onclick="testDeviceId()">Test Device ID Fetch</button>
+    <button onclick="testLogin()">Test Login</button>
+    <div id="result"></div>
+
+    <script>
+        async function testDeviceId() {
+            const result = document.getElementById('result');
+            result.innerHTML = 'Testing device ID fetch...';
+            
+            const agentUrls = [
+                'http://127.0.0.1:47114/device-id',
+                'http://localhost:47114/device-id',
+                'http://127.0.0.1:47113/device-id',
+                'http://localhost:47113/device-id'
+            ];
+            
+            for (const url of agentUrls) {
+                try {
+                    console.log('Trying:', url);
+                    const response = await fetch(url, { 
+                        method: 'GET',
+                        mode: 'cors'
+                    });
+                    
+                    console.log('Response status:', response.status);
+                    
+                    if (response.ok) {
+                        const data = await response.json();
+                        console.log('Response data:', data);
+                        if (data.device_id && data.status === 'active') {
+                            result.innerHTML = `✅ Success! Device ID: ${data.device_id}`;
+                            localStorage.setItem('device_id', data.device_id);
+                            return;
+                        }
+                    }
+                } catch (error) {
+                    console.log('Error with', url, ':', error);
+                }
+            }
+            
+            result.innerHTML = '❌ Failed to get device ID from any agent URL';
+        }
+        
+        async function testLogin() {
+            const result = document.getElementById('result');
+            const deviceId = localStorage.getItem('device_id');
+            
+            if (!deviceId) {
+                result.innerHTML = '❌ No device ID found. Please test device ID fetch first.';
+                return;
+            }
+            
+            result.innerHTML = 'Testing login...';
+            
+            try {
+                const response = await fetch('http://localhost:8000/api/auth/login', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-Device-ID': deviceId
+                    },
+                    body: JSON.stringify({
+                        username: 'abdullah',
+                        password: 'abdullah',
+                        role: 'sales'
+                    })
+                });
+                
+                const data = await response.json();
+                
+                if (response.ok) {
+                    result.innerHTML = `✅ Login successful! Username: ${data.username}, Role: ${data.role}`;
+                } else {
+                    result.innerHTML = `❌ Login failed: ${data.error || data.detail || 'Unknown error'} (Status: ${response.status})`;
+                }
+            } catch (error) {
+                result.innerHTML = `❌ Network error: ${error.message}`;
+            }
+        }
+    </script>
+</body>
+</html>
+

@@ -3,6 +3,8 @@
 import { Card } from "../Card";
 import { Separator } from "../Separator";
 import { toast } from "react-hot-toast";
+import { useEffect } from "react";
+import { saveFileMetaToStorage, loadFileMetaFromStorage, clearFilesFromStorage } from "@/app/lib/fileStorage";
 
 // Mocked production data
 const machines = [
@@ -42,6 +44,36 @@ const getStatusBadge = (status: string) => {
 };
 
 export default function OrderIntakeForm({ formData, setFormData }: any) {
+  // Load files from localStorage on component mount
+  useEffect(() => {
+    console.log('DesignProductionForm: Loading requirements files from localStorage');
+    // Use the safe file storage function that handles quota limits
+    import('@/app/lib/fileStorage').then(({ loadFilesFromStorageSafe }) => {
+      const storedFiles = loadFilesFromStorageSafe('orderLifecycle_requirementsFiles');
+      console.log('DesignProductionForm: Stored files:', storedFiles);
+      console.log('DesignProductionForm: Current formData.requirementsFiles:', formData.requirementsFiles);
+      if (storedFiles.length > 0 && (!formData.requirementsFiles || formData.requirementsFiles.length === 0)) {
+        console.log('DesignProductionForm: Setting requirements files from localStorage');
+        setFormData((prev: any) => ({ ...prev, requirementsFiles: storedFiles }));
+      }
+    });
+  }, []);
+
+  // Save files to localStorage whenever requirementsFiles changes
+  useEffect(() => {
+    console.log('DesignProductionForm: Saving requirements files to localStorage:', formData.requirementsFiles);
+    if (formData.requirementsFiles && formData.requirementsFiles.length > 0) {
+      // Use the safe file storage function that handles quota limits
+      import('@/app/lib/fileStorage').then(({ saveFilesToStorageSafe }) => {
+        saveFilesToStorageSafe('orderLifecycle_requirementsFiles', formData.requirementsFiles);
+        console.log('DesignProductionForm: Requirements files saved successfully');
+      });
+    } else {
+      clearFilesFromStorage('orderLifecycle_requirementsFiles');
+      console.log('DesignProductionForm: Requirements files cleared from localStorage');
+    }
+  }, [formData.requirementsFiles]);
+
   const handleSave = () => {
     toast.success("Design assignment saved successfully");
   };
@@ -111,7 +143,8 @@ export default function OrderIntakeForm({ formData, setFormData }: any) {
               {formData.requirementsFiles && formData.requirementsFiles.length > 0 && (
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-3">
                   {formData.requirementsFiles.map((file: File, index: number) => {
-                    const fileExtension = file.name.split(".").pop()?.toLowerCase();
+                    const fileName = file.name || `file_${index}`;
+                    const fileExtension = fileName.split(".").pop()?.toLowerCase();
                     const isImage = ["jpg", "jpeg", "png", "gif", "bmp"].includes(fileExtension || "");
                     const isPdf = fileExtension === "pdf";
                     const isDoc = ["doc", "docx"].includes(fileExtension || "");
@@ -132,7 +165,7 @@ export default function OrderIntakeForm({ formData, setFormData }: any) {
                           <span className="text-xl">{getIcon()}</span>
                           <div className="flex flex-col overflow-hidden">
                             <span className="text-sm truncate text-gray-800 font-medium">
-                              {file.name}
+                              {fileName}
                             </span>
                             <span className="text-xs text-gray-500">
                               {(file.size / 1024).toFixed(1)} KB

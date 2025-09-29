@@ -1,0 +1,302 @@
+{
+  "info": {
+    "name": "CRM Chat API",
+    "description": "Real-time chat API with WebSocket support",
+    "version": "1.0.0",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "auth": {
+    "type": "bearer",
+    "bearer": [
+      {
+        "key": "token",
+        "value": "{{jwt_token}}",
+        "type": "string"
+      }
+    ]
+  },
+  "variable": [
+    {
+      "key": "base_url",
+      "value": "http://localhost:8000/api",
+      "type": "string"
+    },
+    {
+      "key": "jwt_token",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "conversation_id",
+      "value": "",
+      "type": "string"
+    }
+  ],
+  "item": [
+    {
+      "name": "Bot Interaction",
+      "item": [
+        {
+          "name": "Submit User Message",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"message\": \"Hello, bot! How can you help me?\",\n  \"conversation_id\": \"{{conversation_id}}\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/user-response/",
+              "host": ["{{base_url}}"],
+              "path": ["user-response", ""]
+            }
+          },
+          "response": [
+            {
+              "name": "Success",
+              "originalRequest": {
+                "method": "POST",
+                "header": [],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"message\": \"Hello, bot!\"\n}"
+                },
+                "url": {
+                  "raw": "{{base_url}}/user-response/",
+                  "host": ["{{base_url}}"],
+                  "path": ["user-response", ""]
+                }
+              },
+              "status": "Created",
+              "code": 201,
+              "_postman_previewlanguage": "json",
+              "header": [],
+              "cookie": [],
+              "body": "{\n  \"conversation_id\": \"123e4567-e89b-12d3-a456-426614174000\",\n  \"message_id\": \"123e4567-e89b-12d3-a456-426614174001\"\n}"
+            }
+          ]
+        },
+        {
+          "name": "Get Bot Response",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"conversation_id\": \"{{conversation_id}}\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/bot-response/",
+              "host": ["{{base_url}}"],
+              "path": ["bot-response", ""]
+            }
+          },
+          "response": [
+            {
+              "name": "Success",
+              "originalRequest": {
+                "method": "POST",
+                "header": [],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"conversation_id\": \"123e4567-e89b-12d3-a456-426614174000\"\n}"
+                },
+                "url": {
+                  "raw": "{{base_url}}/bot-response/",
+                  "host": ["{{base_url}}"],
+                  "path": ["bot-response", ""]
+                }
+              },
+              "status": "OK",
+              "code": 200,
+              "_postman_previewlanguage": "json",
+              "header": [],
+              "cookie": [],
+              "body": "{\n  \"message\": \"Hello! 👋 I'm here to help you with your CRM needs. How can I assist you today?\"\n}"
+            }
+          ]
+        },
+        {
+          "name": "Get Bot Prompts",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{base_url}}/bot-prompts/",
+              "host": ["{{base_url}}"],
+              "path": ["bot-prompts", ""]
+            }
+          },
+          "response": [
+            {
+              "name": "Success",
+              "originalRequest": {
+                "method": "GET",
+                "url": {
+                  "raw": "{{base_url}}/bot-prompts/",
+                  "host": ["{{base_url}}"],
+                  "path": ["bot-prompts", ""]
+                }
+              },
+              "status": "OK",
+              "code": 200,
+              "_postman_previewlanguage": "json",
+              "header": [],
+              "cookie": [],
+              "body": "[\n  {\n    \"id\": 1,\n    \"title\": \"Product Search\",\n    \"text\": \"Help me find products in your catalog\",\n    \"order\": 1\n  },\n  {\n    \"id\": 2,\n    \"title\": \"Order Status\",\n    \"text\": \"Check the status of my order\",\n    \"order\": 2\n  }\n]"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Conversation Management",
+      "item": [
+        {
+          "name": "List Conversations",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{base_url}}/chat/conversations/",
+              "host": ["{{base_url}}"],
+              "path": ["chat", "conversations", ""]
+            }
+          },
+          "response": [
+            {
+              "name": "Success",
+              "originalRequest": {
+                "method": "GET",
+                "url": {
+                  "raw": "{{base_url}}/chat/conversations/",
+                  "host": ["{{base_url}}"],
+                  "path": ["chat", "conversations", ""]
+                }
+              },
+              "status": "OK",
+              "code": 200,
+              "_postman_previewlanguage": "json",
+              "header": [],
+              "cookie": [],
+              "body": "{\n  \"count\": 1,\n  \"next\": null,\n  \"previous\": null,\n  \"results\": [\n    {\n      \"id\": \"123e4567-e89b-12d3-a456-426614174000\",\n      \"title\": \"Chat with testuser\",\n      \"created_at\": \"2024-01-01T12:00:00Z\",\n      \"updated_at\": \"2024-01-01T12:05:00Z\",\n      \"is_archived\": false,\n      \"participants\": [\n        {\n          \"id\": \"123e4567-e89b-12d3-a456-426614174002\",\n          \"username\": \"testuser\",\n          \"first_name\": \"Test\",\n          \"last_name\": \"User\",\n          \"role\": \"owner\",\n          \"joined_at\": \"2024-01-01T12:00:00Z\",\n          \"last_read_at\": null\n        }\n      ],\n      \"last_message\": {\n        \"id\": \"123e4567-e89b-12d3-a456-426614174001\",\n        \"text\": \"Hello, bot! How can you help me?\",\n        \"type\": \"user\",\n        \"sender\": \"testuser\",\n        \"created_at\": \"2024-01-01T12:00:00Z\"\n      },\n      \"participant_count\": 1\n    }\n  ]\n}"
+            }
+          ]
+        },
+        {
+          "name": "Create Conversation",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"title\": \"New Chat Session\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/chat/conversations/",
+              "host": ["{{base_url}}"],
+              "path": ["chat", "conversations", ""]
+            }
+          }
+        },
+        {
+          "name": "Get Conversation Details",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{base_url}}/chat/conversations/{{conversation_id}}/",
+              "host": ["{{base_url}}"],
+              "path": ["chat", "conversations", "{{conversation_id}}", ""]
+            }
+          }
+        },
+        {
+          "name": "Get Conversation Messages",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{base_url}}/chat/conversations/{{conversation_id}}/messages/?limit=50&offset=0",
+              "host": ["{{base_url}}"],
+              "path": ["chat", "conversations", "{{conversation_id}}", "messages", ""],
+              "query": [
+                {
+                  "key": "limit",
+                  "value": "50"
+                },
+                {
+                  "key": "offset",
+                  "value": "0"
+                }
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Message Actions",
+      "item": [
+        {
+          "name": "Mark Message as Read",
+          "request": {
+            "method": "POST",
+            "url": {
+              "raw": "{{base_url}}/chat/messages/{{message_id}}/read/",
+              "host": ["{{base_url}}"],
+              "path": ["chat", "messages", "{{message_id}}", "read", ""]
+            }
+          }
+        },
+        {
+          "name": "Upload Attachment",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                {
+                  "key": "file",
+                  "type": "file",
+                  "src": []
+                }
+              ]
+            },
+            "url": {
+              "raw": "{{base_url}}/chat/upload/",
+              "host": ["{{base_url}}"],
+              "path": ["chat", "upload", ""]
+            }
+          }
+        }
+      ]
+    }
+  ],
+  "event": [
+    {
+      "listen": "prerequest",
+      "script": {
+        "type": "text/javascript",
+        "exec": [
+          "// Auto-set conversation_id from user-response if available",
+          "if (pm.response && pm.response.json && pm.response.json().conversation_id) {",
+          "    pm.collectionVariables.set('conversation_id', pm.response.json().conversation_id);",
+          "}"
+        ]
+      }
+    }
+  ]
+}

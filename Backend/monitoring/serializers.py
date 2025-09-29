@@ -1,6 +1,9 @@
 from rest_framework import serializers
 from django.db import models
-from .models import Employee, EmployeeActivity, EmployeeAsset, EmployeeSummary
+from .models import (
+    Employee, EmployeeActivity, EmployeeAsset, EmployeeSummary,
+    Device, DeviceToken, Heartbeat, Screenshot, Session, Org, DeviceUserBind
+)
 
 
 class EmployeeAssetSerializer(serializers.ModelSerializer):
@@ -117,4 +120,60 @@ class ScreenshotUploadSerializer(serializers.Serializer):
 class ScreenshotDeleteSerializer(serializers.Serializer):
     employeeId = serializers.IntegerField()
     file = serializers.CharField()
+
+
+# New monitoring system serializers
+class OrgSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Org
+        fields = '__all__'
+
+
+class DeviceSerializer(serializers.ModelSerializer):
+    user_email = serializers.CharField(source='user.email', read_only=True)
+    user_name = serializers.SerializerMethodField()
+    org_name = serializers.CharField(source='org.name', read_only=True)
+    latest_thumb = serializers.SerializerMethodField()
+    current_user_email = serializers.CharField(source='current_user.email', read_only=True)
+
+    class Meta:
+        model = Device
+        fields = '__all__'
+
+    def get_user_name(self, obj):
+        return f"{obj.current_user.first_name} {obj.current_user.last_name}".strip() if obj.current_user else None
+    
+    def get_latest_thumb(self, obj):
+        last = obj.screenshots.order_by('-taken_at').first()
+        return last.thumb_key if last else None
+
+
+class DeviceTokenSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = DeviceToken
+        fields = '__all__'
+
+
+class DeviceUserBindSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = DeviceUserBind
+        fields = '__all__'
+
+
+class HeartbeatSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Heartbeat
+        fields = '__all__'
+
+
+class ScreenshotSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Screenshot
+        fields = '__all__'
+
+
+class SessionSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Session
+        fields = '__all__'
 

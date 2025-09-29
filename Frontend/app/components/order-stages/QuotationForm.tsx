@@ -11,6 +11,8 @@ export default function QuotationForm({ formData, setFormData }: any) {
   const [isPreviewOpen, setIsPreviewOpen] = useState(false);
   const previewRef = useRef(null);
 
+
+
   const handlePrint = useReactToPrint({
     content: () => previewRef.current,
     documentTitle: "Quotation",
@@ -23,6 +25,38 @@ export default function QuotationForm({ formData, setFormData }: any) {
         <Card className="animate-fadeInUp text-black bg-white shadow-md rounded-xl p-6 md:p-8 space-y-6 w-full border-0">
           <h2 className="text-xl font-bold text-gray-900">Quotation Details</h2>
           <Separator />
+
+          {/* Company Name */}
+          <div className="flex flex-col">
+            <label className="text-sm font-medium text-gray-700 mb-1">
+              Company Name
+            </label>
+            <input
+              type="text"
+              value={formData.companyName || ""}
+              onChange={(e) =>
+                setFormData({ ...formData, companyName: e.target.value })
+              }
+              className="w-full border border-gray-300 rounded px-3 py-2 focus:outline-none focus:ring-2 focus:ring-black"
+              placeholder="Enter company name..."
+            />
+          </div>
+
+          {/* Phone Number */}
+          <div className="flex flex-col">
+            <label className="text-sm font-medium text-gray-700 mb-1">
+              Phone Number
+            </label>
+            <input
+              type="tel"
+              value={formData.phone || ""}
+              onChange={(e) =>
+                setFormData({ ...formData, phone: e.target.value })
+              }
+              className="w-full border border-gray-300 rounded px-3 py-2 focus:outline-none focus:ring-2 focus:ring-black"
+              placeholder="Enter phone number..."
+            />
+          </div>
 
           {/* Notes */}
           <div className="flex flex-col">
@@ -66,7 +100,7 @@ export default function QuotationForm({ formData, setFormData }: any) {
               { label: "Paper/Material Cost", key: "paperCost" },
               { label: "Machine Usage Cost", key: "machineCost" },
               { label: "Design Complexity Cost", key: "designCost" },
-              { label: "Delivery Cost", key: "deleiveryCost" },
+              { label: "Delivery Cost", key: "deliveryCost" },
               { label: "Discount", key: "discount" },
               { label: "Advance Paid", key: "advancePaid" },
             ].map(({ label, key }) => (
@@ -113,6 +147,20 @@ export default function QuotationForm({ formData, setFormData }: any) {
             />
           </div>
 
+          {/* Final Price (Read-only) */}
+          <div className="flex flex-col">
+            <label className="text-sm font-medium text-gray-700 mb-1">
+              Final Price
+            </label>
+            <input
+              type="text"
+              value={formData.grandTotal ? `AED ${formData.grandTotal}` : ""}
+              readOnly
+              className="w-full border border-gray-300 rounded px-3 py-2 bg-gray-100 text-gray-700 font-semibold"
+              placeholder="Calculated automatically..."
+            />
+          </div>
+
           {/* Save Button */}
           <div className="flex justify-between pt-6">
             <button
@@ -126,7 +174,7 @@ export default function QuotationForm({ formData, setFormData }: any) {
       </div>
 
       {/* Live Preview on the Right */}
-      <div className="w-full lg:w-1/2 hidden lg:block">
+      <div className="w-full lg:w-1/2">
         <div className="sticky top-0">
           <QuotationPreview formData={formData} />
         </div>

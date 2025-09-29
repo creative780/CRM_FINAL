@@ -1,9 +1,10 @@
 "use client";
 
-import React from "react";
+import React, { useEffect } from "react";
 import { Card } from "../Card";
 import { Separator } from "../Separator";
 import { Button } from "../Button";
+import { saveFileMetaToStorage, loadFileMetaFromStorage, clearFilesFromStorage } from "@/app/lib/fileStorage";
 
 interface Props {
   formData: any;
@@ -12,6 +13,27 @@ interface Props {
 }
 
 export default function PrintingQAForm({ formData, setFormData, handleMarkPrinted }: Props) {
+  // Load print time from localStorage on component mount
+  useEffect(() => {
+    console.log('PrintingQAForm: Loading print time from localStorage');
+    const storedPrintTime = localStorage.getItem('orderLifecycle_printTime');
+    console.log('PrintingQAForm: Stored print time:', storedPrintTime);
+    console.log('PrintingQAForm: Current formData.printTime:', formData.printTime);
+    if (storedPrintTime && !formData.printTime) {
+      console.log('PrintingQAForm: Setting print time from localStorage');
+      setFormData((prev: any) => ({ ...prev, printTime: storedPrintTime }));
+    }
+  }, []);
+
+  // Save print time to localStorage whenever it changes
+  useEffect(() => {
+    console.log('PrintingQAForm: Saving print time to localStorage:', formData.printTime);
+    if (formData.printTime) {
+      localStorage.setItem('orderLifecycle_printTime', formData.printTime);
+      console.log('PrintingQAForm: Print time saved successfully');
+    }
+  }, [formData]);
+
   return (
     <Card className="text-black bg-white shadow-md rounded-xl p-6 md:p-8 space-y-6 w-full border-0">
       <h2 className="text-xl font-bold text-gray-900">Printing & QA</h2>

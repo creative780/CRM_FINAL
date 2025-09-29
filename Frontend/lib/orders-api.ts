@@ -10,24 +10,37 @@ export interface OrderItem {
 
 export interface Order {
   id: number;
-  order_id: string;
+  order_code: string;
   client_name: string;
   specs: string;
   urgency: string;
   status: string;
   stage: string;
   items?: OrderItem[];
+  quotation?: OrderQuotation;
   created_by: number | null;
   created_at: string;
   updated_at: string;
 }
 
 export interface OrderQuotation {
-  order: number;
   labour_cost: number;
   finishing_cost: number;
   paper_cost: number;
+  machine_cost: number;
   design_cost: number;
+  delivery_cost: number;
+  other_charges: number;
+  discount: number;
+  advance_paid: number;
+  quotation_notes?: string;
+  custom_field?: string;
+  products_subtotal: number;
+  other_subtotal: number;
+  subtotal: number;
+  vat_3pct: number;
+  grand_total: number;
+  remaining: number;
 }
 
 export interface OrderDesign {
@@ -73,7 +86,7 @@ export const ordersApi = {
     api.get('/api/orders/'),
 
   createOrder: (data: OrderCreatePayload): Promise<Order> =>
-    api.post('/api/orders', data),
+    api.post('/api/orders/', data),
   
   getOrder: (id: number): Promise<Order> => 
     api.get(`/api/orders/${id}/`),
@@ -83,17 +96,43 @@ export const ordersApi = {
   
   deleteOrder: (id: number): Promise<void> => 
     api.delete(`/api/orders/${id}/`),
-
-  // Order Stage Management
-  updateOrderStage: (id: number, stage: string, payload: any): Promise<void> => 
-    api.patch(`/api/orders/${id}`, { stage, payload }),
-
-  // Order Quotation
-  getQuotation: (orderId: number): Promise<OrderQuotation> => 
-    api.get(`/api/orders/${orderId}/quotation/`),
   
-  updateQuotation: (orderId: number, data: Partial<OrderQuotation>): Promise<void> => 
-    api.patch(`/api/orders/${orderId}/quotation/`, data),
+  // Quotation operations
+  getQuotation: async (orderId: number): Promise<OrderQuotation> => {
+    console.log('=== GET QUOTATION API CALL ===');
+    console.log('Order ID:', orderId);
+    console.log('URL:', `/api/orders/${orderId}/quotation/`);
+    const response = await api.get(`/api/orders/${orderId}/quotation/`);
+    console.log('Raw response:', response);
+    console.log('Response type:', typeof response);
+    console.log('Response keys:', Object.keys(response));
+    console.log('Response.ok:', response.ok);
+    console.log('Response.data:', response.data);
+    console.log('Response.data type:', typeof response.data);
+    console.log('Response.data keys:', response.data ? Object.keys(response.data) : 'undefined');
+    
+    // Backend returns {ok: true, data: {...}}, extract the data
+    const result = response.data;
+    console.log('Final result:', result);
+    console.log('Final result type:', typeof result);
+    console.log('Final result keys:', result ? Object.keys(result) : 'undefined');
+    console.log('Final result labour_cost:', result?.labour_cost);
+    console.log('Final result stringified:', JSON.stringify(result, null, 2));
+    return response.data;
+  },
+  
+  updateQuotation: async (orderId: number, data: Partial<OrderQuotation>): Promise<OrderQuotation> => {
+    console.log('=== UPDATE QUOTATION API CALL ===');
+    console.log('Order ID:', orderId);
+    console.log('Data to send:', data);
+    console.log('URL:', `/api/orders/${orderId}/quotation/`);
+    const response = await api.patch(`/api/orders/${orderId}/quotation/`, data);
+    console.log('Raw response:', response);
+    // Backend returns {ok: true, data: {...}}, extract the data
+    const result = response.data;
+    console.log('Extracted data:', result);
+    return result;
+  },
 
   // Order Design
   getDesign: (orderId: number): Promise<OrderDesign> => 

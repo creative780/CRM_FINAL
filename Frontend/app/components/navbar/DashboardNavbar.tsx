@@ -51,7 +51,7 @@ export default function DashboardNavbar() {
     { id: "leads", label: "Leads", href: "/admin/leads" },
     { id: "clients", label: "Clients", href: "/admin/client" },
     { id: "attendance", label: "Attendance", href: "/admin/attendence" },
-    { id: "monitoring", label: "Employee Monitoring", href: "/admin/monitoring" },
+    { id: "monitoring", label: "Employee Monitoring", href: "/admin/monitoring-new" },
     { id: "salary", label: "Salary Builder", href: "/admin/hr/salary-builder" },
     { id: "activity", label: "Activity Logs", href: "/admin/activity-logs" },
         { id: "chat", label: "Chat", href: "/admin/chat" },

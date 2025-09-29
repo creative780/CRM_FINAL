@@ -21,6 +21,7 @@ export default function SelectedProductsList({
     return null;
   }
 
+
   return (
     <div className={`space-y-3 ${className}`}>
       <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3">
@@ -44,10 +45,14 @@ export default function SelectedProductsList({
         {items.length > 0 && (
           <>
             <span className="ml-2">
-              • Total quantity: {items.reduce((sum, item) => sum + item.quantity, 0)}
+              • Total quantity: {items.reduce((sum, item) => sum + (item.quantity || 0), 0)}
             </span>
             <span className="ml-2">
-              • Total value: AED {items.reduce((sum, item) => sum + (item.price * item.quantity), 0).toFixed(2)}
+              • Total value: AED {items.reduce((sum, item) => {
+                const price = typeof item.price === 'number' ? item.price : parseFloat(item.price || 0);
+                const quantity = item.quantity || 0;
+                return sum + (price * quantity);
+              }, 0).toFixed(2)}
             </span>
           </>
         )}

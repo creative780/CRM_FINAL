@@ -5,9 +5,41 @@ import { Separator } from "../Separator";
 import { Button } from "../Button";
 import { CheckCircle } from "lucide-react";
 import { toast } from "react-hot-toast";
+import { useEffect } from "react";
+import { saveFileMetaToStorage, loadFileMetaFromStorage, clearFilesFromStorage } from "@/app/lib/fileStorage";
 
 export default function ClientApprovalForm({ formData, setFormData }: any) {
   const clientApprovalFiles = formData.clientApprovalFiles || [];
+
+  // Load files from localStorage on component mount
+  useEffect(() => {
+    const storedFiles = loadFileMetaFromStorage('orderLifecycle_clientApprovalFiles');
+    if (storedFiles.length > 0) {
+      // Convert stored file metadata back to File objects with proper name
+      const files = storedFiles.map(meta => {
+        const file = new File([], meta.name, { 
+          type: meta.type,
+          lastModified: meta.lastModified
+        });
+        // Ensure the name property is properly set
+        Object.defineProperty(file, 'name', {
+          value: meta.name,
+          writable: false
+        });
+        return file;
+      });
+      setFormData({ ...formData, clientApprovalFiles: files });
+    }
+  }, []);
+
+  // Save files to localStorage whenever clientApprovalFiles changes
+  useEffect(() => {
+    if (clientApprovalFiles && clientApprovalFiles.length > 0) {
+      saveFileMetaToStorage('orderLifecycle_clientApprovalFiles', clientApprovalFiles);
+    } else {
+      clearFilesFromStorage('orderLifecycle_clientApprovalFiles');
+    }
+  }, [clientApprovalFiles]);
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const selectedFiles = Array.from(e.target.files || []);
@@ -65,7 +97,8 @@ export default function ClientApprovalForm({ formData, setFormData }: any) {
         {clientApprovalFiles.length > 0 && (
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-3">
             {clientApprovalFiles.map((file: File, index: number) => {
-              const fileExtension = file.name.split('.').pop()?.toLowerCase();
+              const fileName = file.name || `file_${index}`;
+              const fileExtension = fileName.split('.').pop()?.toLowerCase();
               const isImage = ['jpg', 'jpeg', 'png', 'gif', 'bmp'].includes(fileExtension || '');
               const isPdf = fileExtension === 'pdf';
               const isDoc = ['doc', 'docx'].includes(fileExtension || '');
@@ -85,7 +118,7 @@ export default function ClientApprovalForm({ formData, setFormData }: any) {
                   <div className="flex items-center gap-2 overflow-hidden">
                     <span className="text-xl">{getIcon()}</span>
                     <div className="flex flex-col overflow-hidden">
-                      <span className="text-sm truncate text-gray-800 font-medium">{file.name}</span>
+                      <span className="text-sm truncate text-gray-800 font-medium">{fileName}</span>
                       <span className="text-xs text-gray-500">{(file.size / 1024).toFixed(1)} KB</span>
                     </div>
                   </div>

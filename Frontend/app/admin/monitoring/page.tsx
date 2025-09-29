@@ -48,6 +48,34 @@ function idleTimeToMinutes(time: string): number {
   return parseInt(m[1],10)*60 + parseInt(m[2],10);
 }
 
+// Helper function to generate consistent mock data based on device ID
+function generateMockData(deviceId: string) {
+  // Use device ID as seed for consistent "random" values
+  let hash = 0;
+  for (let i = 0; i < deviceId.length; i++) {
+    const char = deviceId.charCodeAt(i);
+    hash = ((hash << 5) - hash) + char;
+    hash = hash & hash; // Convert to 32-bit integer
+  }
+  
+  // Generate consistent values based on hash
+  const keystrokeCount = Math.abs(hash % 2000) + 500;
+  const mouseClicks = Math.abs(hash % 1500) + 300;
+  const activeHours = Math.abs(hash % 8) + 1;
+  const activeMinutes = Math.abs(hash % 60);
+  const idleHours = Math.abs(hash % 2);
+  const idleMinutes = Math.abs(hash % 60);
+  const productivity = Math.abs(hash % 40) + 60;
+  
+  return {
+    keystrokeCount,
+    mouseClicks,
+    activeTime: `${activeHours}h ${activeMinutes}m`,
+    idleTime: `${idleHours}h ${idleMinutes}m`,
+    productivity
+  };
+}
+
 /* ---- MOCK ---- */
 const mockEmployees: EmployeeActivity[] = [
   { id: "1", name: "Alice Johnson", email: "alice@company.com", department: "Sales",
@@ -92,8 +120,9 @@ export default function EmployeeMonitoringWithLogin() {
   // ---------- HOOKS ----------
   const [authed, setAuthed] = useState(false);
   const [u, setU] = useState(""); const [p, setP] = useState(""); const [loginErr, setLoginErr] = useState("");
+  const [isHydrated, setIsHydrated] = useState(false);
 
-  const [employees, setEmployees] = useState<EmployeeActivity[]>(mockEmployees);
+  const [employees, setEmployees] = useState<EmployeeActivity[]>([]);
   const [selectedEmployee, setSelectedEmployee] = useState<EmployeeActivity | null>(null);
   const [searchTerm, setSearchTerm] = useState("");
   const [departmentFilter, setDepartmentFilter] = useState("all");
@@ -128,6 +157,12 @@ export default function EmployeeMonitoringWithLogin() {
         setLoginErr("");
       } catch (err: any) {
         setAuthed(false);
+        if (err.message.startsWith("DEVICE_REQUIRED:")) {
+          const enrollmentToken = err.message.split(":")[1];
+          localStorage.setItem("enrollment_token", enrollmentToken);
+          window.location.href = `/install-agent?token=${enrollmentToken}`;
+          return;
+        }
         setLoginErr(err?.message || "Invalid credentials");
       }
     })();
@@ -149,24 +184,132 @@ export default function EmployeeMonitoringWithLogin() {
 
   // ---------- effects ----------
   useEffect(() => {
-    if (!authed) return;
+    // Mark as hydrated to prevent SSR/client mismatches
+    setIsHydrated(true);
+    
+    // Check if user is already authenticated
+    if (typeof window !== "undefined" && localStorage.getItem("admin_token")) {
+      console.log('Found existing admin token, setting authed to true');
+      setAuthed(true);
+    } else {
+      console.log('No admin token found, user needs to login');
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!authed) {
+      console.log('User not authenticated, skipping data fetch');
+      return;
+    }
+    
     let stop = false;
     const load = async () => {
       try {
-        const params = new URLSearchParams({ q: searchTerm, dept: departmentFilter, status: statusFilter });
-        const res = await fetch(`${API_BASE}/api/employees?${params.toString()}`, { cache: "no-store", headers: { ...(typeof window!=="undefined" && localStorage.getItem("admin_token") ? { Authorization: `Bearer ${localStorage.getItem("admin_token")}` } : {}) } });
-        if (!res.ok) { setConnected(false); setFetchErr(`HTTP ${res.status}`); return; }
-        const data = await res.json();
-        if (!stop && Array.isArray(data?.employees)) {
-          // ensure videos field exists
-          const norm = data.employees.map((e: any) => ({ ...e, videos: Array.isArray(e.videos) ? e.videos : [] }));
-          setEmployees(norm); setConnected(true); setFetchErr(null);
+        const token = typeof window !== "undefined" ? localStorage.getItem("admin_token") : null;
+        console.log('Auth token:', token ? 'Present' : 'Missing');
+        const params = new URLSearchParams({ q: searchTerm, status: statusFilter });
+        const headers = token ? { Authorization: `Bearer ${token}` } : {};
+        console.log('Fetching devices with headers:', headers);
+        
+        const res = await fetch(`${API_BASE}/api/admin/devices?${params.toString()}`, { cache: "no-store", headers });
+        console.log('Response status:', res.status);
+        
+        if (!res.ok) { 
+          console.error('API request failed with status:', res.status);
+          setConnected(false); 
+          setFetchErr(`HTTP ${res.status}`); 
+          return; 
         }
-      } catch (e:any) { setConnected(false); setFetchErr(e?.message || "Network error"); }
+        
+        const data = await res.json();
+        console.log('Raw API response:', data);
+        
+        if (!stop && Array.isArray(data?.devices)) {
+          console.log('Raw device data:', data.devices);
+          
+          // Convert device data to employee format for compatibility
+          const norm = data.devices.map((device: any) => {
+            try {
+              console.log('Processing device:', device);
+              
+              // Safe access to nested properties with null checks
+              const userName = device.current_user_name || 
+                             (device.user && device.user.name) || 
+                             device.hostname || 
+                             'Unknown User';
+              
+              const userEmail = (device.user && device.user.email) || 'No User';
+              const orgName = (device.org && device.org.name) || 'Unknown Department';
+              
+              const lastScreenshotTime = device.latest_screenshot ? 
+                `${Math.floor((Date.now() - new Date(device.latest_screenshot.taken_at).getTime()) / 60000)} min ago` : 
+                'Never';
+              
+              const screenshots = device.latest_screenshot ? [device.latest_screenshot.thumb_url] : [];
+              
+              const activities = device.latest_heartbeat ? [
+                { 
+                  time: new Date(device.latest_heartbeat.created_at).toLocaleTimeString('en-US', { hour12: false, hour: '2-digit', minute: '2-digit' }), 
+                  action: `Active in ${device.latest_heartbeat.active_window || 'Unknown'}`, 
+                  application: device.latest_heartbeat.active_window || 'Unknown' 
+                },
+              ] : [];
+              
+              // Generate consistent mock data based on device ID
+              const mockData = generateMockData(device.id);
+              
+              const result = {
+                id: device.id,
+                name: userName,
+                email: userEmail,
+                department: orgName,
+                status: device.status.toLowerCase(),
+                lastScreenshot: lastScreenshotTime,
+                keystrokeCount: mockData.keystrokeCount,
+                mouseClicks: mockData.mouseClicks,
+                activeTime: mockData.activeTime,
+                idleTime: mockData.idleTime,
+                productivity: mockData.productivity,
+                screenshots: screenshots,
+                videos: [], // No videos in new system
+                activityTimeline: new Array(24).fill(device.status === 'ONLINE' ? 'active' : 'idle'),
+                activities: activities,
+                dailySummary: [],
+              };
+              
+              console.log('Processed device result:', result);
+              return result;
+            } catch (error) {
+              console.error('Error processing device:', device, error);
+              return null;
+            }
+          }).filter(Boolean);
+          
+          console.log('Processed employees:', norm);
+          console.log('Setting employees state with', norm.length, 'devices');
+          setEmployees(norm); 
+          setConnected(true); 
+          setFetchErr(null);
+        } else {
+          console.warn('Invalid data format received:', data);
+          setConnected(false);
+          setFetchErr('Invalid data format');
+        }
+      } catch (e: any) { 
+        console.error('Error in data fetch:', e);
+        setConnected(false); 
+        setFetchErr(e?.message || "Network error"); 
+      }
     };
+    
+    console.log('Starting data fetch loop');
     load();
     const id = setInterval(load, 6000);
-    return () => { stop = true; clearInterval(id); };
+    return () => { 
+      console.log('Cleaning up data fetch loop');
+      stop = true; 
+      clearInterval(id); 
+    };
   }, [authed, searchTerm, departmentFilter, statusFilter, timeRange]);
 
   useEffect(() => {
@@ -205,12 +348,13 @@ export default function EmployeeMonitoringWithLogin() {
     lastActivityRef.current = Date.now();
     setEmployees(prev => {
       const ids = getTargetIds(prev);
-      const nowTime = nowHM();
+      const nowTime = new Date().toTimeString().slice(0, 5);
       const upd = prev.map(e => {
         if (!ids.includes(e.id)) return e;
         const ke = e.keystrokeCount + (delta.k ?? 0);
         const cl = e.mouseClicks + (delta.c ?? 0);
-        const prod = Math.min(99, Math.max(50, e.productivity + (Math.random() > 0.5 ? 1 : -1)));
+        // Use a more predictable productivity change
+        const prod = Math.min(99, Math.max(50, e.productivity + (e.id.charCodeAt(0) % 2 === 0 ? 1 : -1)));
         const activities = [{ time: nowTime, action, application }, ...e.activities].slice(0, 5000);
         return { ...e, keystrokeCount: ke, mouseClicks: cl, productivity: prod, lastScreenshot: e.lastScreenshot || "Just now", activities, status: "online", idleTime: "0h 0m" };
       });
@@ -423,6 +567,21 @@ export default function EmployeeMonitoringWithLogin() {
   };
 
   // ---------- render ----------
+  // Prevent hydration mismatches by not rendering until hydrated
+  if (!isHydrated) {
+    return (
+      <div className="min-h-screen flex flex-col">
+        <DashboardNavbar />
+        <div className="flex-1 flex items-center justify-center p-6">
+          <div className="text-center">
+            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-[#891F1A] mx-auto mb-4"></div>
+            <p className="text-gray-600">Loading...</p>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   if (!authed) {
     return (
       <div className="min-h-screen flex flex-col">

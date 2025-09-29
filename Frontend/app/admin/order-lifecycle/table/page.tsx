@@ -16,9 +16,6 @@ import ProductSearchModal from "@/app/components/modals/ProductSearchModal";
 import ProductConfigModal from "@/app/components/modals/ProductConfigModal";
 import { BaseProduct, ConfiguredProduct } from "@/app/types/products";
 
-// import global store
-import { useOrderStore } from "@/app/stores/useOrderStore";
-
 /* ===== Types ===== */
 type Urgency = "Urgent" | "High" | "Normal" | "Low";
 type Status = "New" | "Active" | "Completed";
@@ -59,6 +56,7 @@ const normalizeToYMD = (input: string): string => {
 
 const statusMap: Record<string, Status> = {
   new: "New",
+  active: "Active",
   in_progress: "Active",
   completed: "Completed",
   delivered: "Completed",
@@ -80,7 +78,7 @@ const orderToRow = (order: Order): Row => {
   const summary = summarizeItems(order.items);
   return {
     id: order.id,
-    orderCode: order.order_id,
+    orderCode: order.order_code,
     title: `${summary} - ${order.client_name}`,
     date: datePart,
     time,
@@ -101,14 +99,15 @@ export default function OrdersTablePage() {
   const [selectedDate, setSelectedDate] = useState<string>("");
   const [q, setQ] = useState("");
   const [orders, setOrders] = useState<Row[]>([]);
+  const [savedOrders, setSavedOrders] = useState<Row[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
   const [isOpen, setIsOpen] = useState(false);
   const [selected, setSelected] = useState<Row | null>(null);
 
-  // use global store instead of local useState
-  const { formData, setFormData } = useOrderStore();
+  // Local state for quotation data (order-specific)
+  const [quotationData, setQuotationData] = useState<any>({});
 
   const [isCustomOpen, setIsCustomOpen] = useState(false);
   const [customFormData, setCustomFormData] = useState<OrderIntakeFormValues>(() => createOrderIntakeDefaults());
@@ -120,6 +119,8 @@ export default function OrdersTablePage() {
   const [pendingInitialQty, setPendingInitialQty] = useState<number | undefined>(undefined);
   const [pendingInitialAttributes, setPendingInitialAttributes] = useState<Record<string, string> | undefined>(undefined);
   const [editingProductId, setEditingProductId] = useState<string | null>(null);
+  const [savingDraft, setSavingDraft] = useState(false);
+  const [sendingToSales, setSendingToSales] = useState(false);
 
   const serializeSelectedProducts = (items: ConfiguredProduct[] = selectedProducts) =>
     items.map((item) => ({
@@ -130,7 +131,9 @@ export default function OrdersTablePage() {
       sku: item.sku,
     }));
 
-  const handleAddProductClick = () => {
+  const handleAddProductClick = (e?: React.MouseEvent) => {
+    e?.stopPropagation();
+    e?.preventDefault();
     setShowSearchModal(true);
   };
 
@@ -226,18 +229,111 @@ export default function OrdersTablePage() {
   }, [isCustomOpen]);
 
   const openForRow = useCallback(
-    (row: Row) => {
+    async (row: Row) => {
       setSelected(row);
-      setFormData((prev: any) => ({
-        ...prev,
-        orderId: row.orderCode,
-        _orderId: row.id,
-        projectDescription: row.title,
-        date: normalizeToYMD(row.date) || row.date,
-      }));
       setIsOpen(true);
+      
+      try {
+        // Load full order data from API
+        const orderData = await ordersApi.getOrder(row.id);
+        console.log('=== LOADING ORDER DATA ===');
+        console.log('Order ID:', row.id);
+        console.log('Order data keys:', Object.keys(orderData));
+        console.log('Company Name:', orderData.company_name);
+        console.log('Phone:', orderData.phone);
+        console.log('Pricing Status:', orderData.pricing_status);
+        console.log('Order data stringified:', JSON.stringify(orderData, null, 2));
+        
+        // Load quotation data
+        let quotationData = null;
+        try {
+          const quotationResponse = await ordersApi.getQuotation(row.id);
+          quotationData = quotationResponse;
+          console.log('=== LOADING QUOTATION DATA ===');
+          console.log('Order ID:', row.id);
+          console.log('Quotation response:', quotationResponse);
+          console.log('Quotation response type:', typeof quotationResponse);
+          console.log('Quotation response keys:', Object.keys(quotationResponse));
+          console.log('quotationData.labour_cost:', quotationData?.labour_cost);
+          console.log('quotationData.finishing_cost:', quotationData?.finishing_cost);
+          console.log('quotationData.paper_cost:', quotationData?.paper_cost);
+          console.log('quotationData keys:', quotationData ? Object.keys(quotationData) : 'undefined');
+          console.log('quotationData stringified:', JSON.stringify(quotationData, null, 2));
+        } catch (quotationError) {
+          console.log('No quotation found for order, will create new one');
+        }
+        
+          // Set form data with loaded order data
+          const formDataToSet = {
+            orderId: orderData.order_code,
+            _orderId: orderData.id,
+            projectDescription: row.title,
+            date: normalizeToYMD(row.date) || row.date,
+            clientName: orderData.client_name,
+            clientCompany: orderData.company_name || "",
+            clientPhone: orderData.phone || "",
+            email: orderData.email || "",
+            address: orderData.address || "",
+            specifications: orderData.specs,
+            urgency: orderData.urgency,
+            status: orderData.pricing_status || "Not Priced",
+            stage: orderData.stage,
+            // Load quotation data if available
+            labourCost: quotationData?.labour_cost || 0,
+            finishingCost: quotationData?.finishing_cost || 0,
+            paperCost: quotationData?.paper_cost || 0,
+            machineCost: quotationData?.machine_cost || 0,
+            designCost: quotationData?.design_cost || 0,
+            deliveryCost: quotationData?.delivery_cost || 0,
+            otherCharges: quotationData?.other_charges || 0,
+            discount: quotationData?.discount || 0,
+            advancePaid: quotationData?.advance_paid || 0,
+            quotationNotes: quotationData?.quotation_notes || "",
+            customField: quotationData?.custom_field || "",
+            grandTotal: quotationData?.grand_total || 0,
+            finalPrice: quotationData?.grand_total || 0,
+            // Load items
+            items: orderData.items || [],
+            products: orderData.items || [],
+            // Default sendTo value
+            sendTo: "Sales",
+          };
+        
+        console.log('Setting form data with quotation values:', {
+          labourCost: formDataToSet.labourCost,
+          finishingCost: formDataToSet.finishingCost,
+          paperCost: formDataToSet.paperCost,
+          machineCost: formDataToSet.machineCost,
+          designCost: formDataToSet.designCost,
+          deliveryCost: formDataToSet.deliveryCost,
+          otherCharges: formDataToSet.otherCharges,
+          discount: formDataToSet.discount,
+          advancePaid: formDataToSet.advancePaid,
+        });
+        
+        setQuotationData(formDataToSet);
+      } catch (error) {
+        console.error('Failed to load order data:', error);
+        toast.error('Failed to load order data');
+        // Fallback to basic data
+        setQuotationData({
+          orderId: row.orderCode,
+          _orderId: row.id,
+          projectDescription: row.title,
+          date: normalizeToYMD(row.date) || row.date,
+          sendTo: "Sales",
+        });
+      }
     },
-    [setFormData],
+    [],
+  );
+
+  const openOrderLifecycle = useCallback(
+    (row: Row) => {
+      // Navigate to order lifecycle page with order ID
+      window.location.href = `/admin/order-lifecycle?orderId=${row.id}`;
+    },
+    [],
   );
 
   const createOrder = async (data: OrderIntakeFormValues) => {
@@ -443,16 +539,30 @@ export default function OrdersTablePage() {
                   <td className="px-3 py-3 text-center">{r.time}</td>
                   <td className="px-3 py-3 text-center">{urgencyBadge(r.urgency)}</td>
                   <td className="px-3 py-3 text-center">
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        deleteOrder(r.id, r.orderCode);
-                      }}
-                      className="text-red-400 hover:text-red-600 transition-colors"
-                      title="Delete order"
-                    >
-                      <Trash2 className="w-4 h-4" />
-                    </button>
+                    <div className="flex items-center justify-center gap-2">
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          openOrderLifecycle(r);
+                        }}
+                        className="text-blue-400 hover:text-blue-600 transition-colors"
+                        title="Open Order Lifecycle"
+                      >
+                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                        </svg>
+                      </button>
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          deleteOrder(r.id, r.orderCode);
+                        }}
+                        className="text-red-400 hover:text-red-600 transition-colors"
+                        title="Delete order"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    </div>
                   </td>
                 </tr>
               ))
@@ -521,7 +631,10 @@ export default function OrdersTablePage() {
 
       {/* Quotation Popup */}
       <Transition show={isOpen} as={Fragment}>
-        <Dialog onClose={() => setIsOpen(false)} className="relative z-50">
+        <Dialog onClose={() => {
+          setIsOpen(false);
+          setQuotationData({}); // Clear quotation data when closing
+        }} className="relative z-50">
           <div className="fixed inset-0 bg-black/40" />
           <div className="fixed inset-0 flex items-center justify-center p-4">
             <Dialog.Panel className="relative w-full max-w-6xl bg-white rounded-2xl shadow-2xl flex flex-col max-h-[90vh]">
@@ -536,15 +649,18 @@ export default function OrdersTablePage() {
                     {selected && " Â· "} {selected?.time}
                   </p>
                 </div>
-                <button onClick={() => setIsOpen(false)} className="rounded-lg border px-3 py-1.5 text-sm hover:bg-gray-50">
+                <button onClick={() => {
+                  setIsOpen(false);
+                  setQuotationData({}); // Clear quotation data when closing
+                }} className="rounded-lg border px-3 py-1.5 text-sm hover:bg-gray-50">
                   Close
                 </button>
               </div>
 
               {/* Body */}
               <div className="flex-1 overflow-y-auto px-6 py-6">
-                {/* Sales fills everything here, and it writes into global formData */}
-                <QuotationFormWithPreview formData={formData} setFormData={setFormData} />
+                {/* Sales fills everything here, and it writes into local quotationData */}
+                <QuotationFormWithPreview formData={quotationData} setFormData={setQuotationData} />
               </div>
 
               {/* Footer */}
@@ -556,9 +672,9 @@ export default function OrdersTablePage() {
                   <select
                     id="sendTo"
                     className="inline-flex items-center rounded-md border border-gray-300 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#891F1A]/30 focus:border-[#891F1A] transition"
-                    value={formData?.sendTo ?? "Sales"}
+                    value={quotationData?.sendTo ?? "Sales"}
                     onChange={(e) =>
-                      setFormData((prev: any) => ({
+                      setQuotationData((prev: any) => ({
                         ...(prev || {}),
                         sendTo: e.target.value as "Sales" | "Designer" | "Production",
                       }))
@@ -571,7 +687,10 @@ export default function OrdersTablePage() {
                 </div>
 
                 <div className="flex items-center gap-3">
-                  <Button onClick={() => setIsOpen(false)} variant="outline">
+                  <Button onClick={() => {
+                    setIsOpen(false);
+                    setQuotationData({}); // Clear quotation data when canceling
+                  }} variant="outline">
                     Cancel
                   </Button>
                   <Button
@@ -579,18 +698,49 @@ export default function OrdersTablePage() {
                       if (!selected) return;
 
                       try {
-                        // Update order in backend
-                        await ordersApi.updateOrder(selected.id, {
-                          client_name: formData?.clientName || selected.title.split(" - ")[1] || "",
-                                          specs: formData?.specifications || "",
-                          urgency: formData?.urgency || selected.urgency,
-                          status:
-                            selected.status === "Completed"
-                              ? "completed"
-                              : selected.status === "Active"
-                              ? "in_progress"
-                              : "new",
-                        });
+                        setLoading(true);
+                        
+        // Update order in backend (only basic fields, don't change status)
+        const orderUpdateData = {
+          client_name: quotationData?.clientName || selected.title.split(" - ")[1] || "",
+          company_name: quotationData?.clientCompany || "",
+          phone: quotationData?.clientPhone || "",
+          email: quotationData?.email || "",
+          address: quotationData?.address || "",
+          specs: quotationData?.specifications || "",
+          urgency: quotationData?.urgency || selected.urgency,
+          pricing_status: quotationData?.status || "Not Priced",
+          // Don't change status when saving quotations
+        };
+        console.log('=== SAVING ORDER DATA ===');
+        console.log('Order update data:', orderUpdateData);
+        await ordersApi.updateOrder(selected.id, orderUpdateData);
+
+                        // Always update quotation data when saving
+                        if (quotationData) {
+                          try {
+                            const quotationResponse = await ordersApi.updateQuotation(selected.id, {
+                              labour_cost: quotationData.labourCost || 0,
+                              finishing_cost: quotationData.finishingCost || 0,
+                              paper_cost: quotationData.paperCost || 0,
+                              machine_cost: quotationData.machineCost || 0,
+                              design_cost: quotationData.designCost || 0,
+                              delivery_cost: quotationData.deliveryCost || 0,
+                              other_charges: quotationData.otherCharges || 0,
+                              discount: quotationData.discount || 0,
+                              advance_paid: quotationData.advancePaid || 0,
+                              quotation_notes: quotationData.quotationNotes || "",
+                              custom_field: quotationData.customField || "",
+                              grand_total: quotationData.finalPrice || quotationData.grandTotal || 0,
+                            });
+                          } catch (quotationError) {
+                            console.error('Failed to save quotation:', quotationError);
+                            toast.error('Failed to save quotation data');
+                            return; // Don't continue if quotation save fails
+                          }
+                        } else {
+                          console.log('No quotationData to save');
+                        }
 
                         // Refresh orders list
                         const apiOrders = await ordersApi.getOrders();
@@ -599,10 +749,13 @@ export default function OrdersTablePage() {
                         setSavedOrders(convertedOrders);
                         setOrders(convertedOrders);
                         setIsOpen(false);
-                        toast.success("Order updated successfully!");
+                        setQuotationData({}); // Clear quotation data after successful save
+                        toast.success("Order and quotation updated successfully!");
                       } catch (err: any) {
                         toast.error(`Failed to update order: ${err.message}`);
                         console.error("Error updating order:", err);
+                      } finally {
+                        setLoading(false);
                       }
                     }}
                     disabled={loading}
@@ -619,10 +772,21 @@ export default function OrdersTablePage() {
 
       {/* Custom Order Popup */}
       <Transition show={isCustomOpen} as={Fragment}>
-        <Dialog onClose={() => setIsCustomOpen(false)} className="relative z-50">
+        <Dialog 
+          onClose={() => {
+            if (!showSearchModal && !showConfigModal) {
+              setIsCustomOpen(false);
+            }
+          }} 
+          className="relative z-50"
+          static={showSearchModal || showConfigModal}
+        >
           <div className="fixed inset-0 bg-black/40" />
           <div className="fixed inset-0 flex items-center justify-center p-4">
-            <Dialog.Panel className="w-full max-w-6xl bg-white rounded-2xl shadow-2xl ring-1 ring-black/5 overflow-hidden flex flex-col max-h-[90vh]">
+            <Dialog.Panel 
+              className="w-full max-w-6xl bg-white rounded-2xl shadow-2xl ring-1 ring-black/5 overflow-hidden flex flex-col max-h-[90vh]"
+              onClick={(e) => e.stopPropagation()}
+            >
               <div className="flex items-center justify-between px-5 py-4 border-b bg-white sticky top-0 z-10">
                 <Dialog.Title className="text-lg font-semibold text-[#891F1A]">Add a Custom Order</Dialog.Title>
                 <button onClick={() => setIsCustomOpen(false)} className="rounded-lg border px-3 py-1.5 text-sm hover:bg-gray-50">
@@ -635,10 +799,6 @@ export default function OrdersTablePage() {
                   formData={customFormData}
                   setFormData={setCustomFormData}
                   requireProductsAndFiles
-                  onSaveDraft={handleSaveDraftCustom}
-                  onSendToSales={handleSendToSalesCustom}
-                  savingDraft={savingDraft}
-                  sendingToSales={sendingToSales}
                   selectedProducts={selectedProducts}
                   onAddProduct={handleAddProductClick}
                   onRemoveProduct={handleRemoveProduct}

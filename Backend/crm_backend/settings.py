@@ -53,6 +53,7 @@ INSTALLED_APPS = [
     'corsheaders',
     'drf_spectacular',
     'django_filters',
+    'channels',
 
     # Local apps
     'accounts',
@@ -100,6 +101,7 @@ TEMPLATES = [
 ]
 
 WSGI_APPLICATION = 'crm_backend.wsgi.application'
+ASGI_APPLICATION = 'crm_backend.asgi.application'
 
 
 # Database
@@ -188,7 +190,13 @@ SPECTACULAR_SETTINGS = {
 }
 
 # CORS
-CORS_ALLOWED_ORIGINS = env.list('CORS_ALLOWED_ORIGINS', default=['http://localhost:3000', 'http://127.0.0.1:3000'])
+CORS_ALLOWED_ORIGINS = env.list('CORS_ALLOWED_ORIGINS', default=[
+    'http://localhost:3000', 
+    'http://127.0.0.1:3000',
+    'http://localhost:8000',
+    'http://127.0.0.1:8000'
+])
+CORS_ALLOW_ALL_ORIGINS = True  # Allow all origins for testing
 CORS_ALLOW_CREDENTIALS = True
 # Allow custom device header used by the frontend when checking in/out
 from corsheaders.defaults import default_headers
@@ -223,3 +231,169 @@ CELERY_TASK_ALWAYS_EAGER = env.bool('CELERY_TASK_ALWAYS_EAGER', default=False)
 
 # Exports dir
 EXPORTS_DIR = env('EXPORTS_DIR', default=str(BASE_DIR / 'media' / 'exports'))
+
+# Channels
+CHANNEL_LAYERS = {
+    'default': {
+        'BACKEND': 'channels_redis.core.RedisChannelLayer',
+        'CONFIG': {
+            'hosts': [env('CHANNELS_REDIS_URL', default=env('REDIS_URL', default='redis://localhost:6379/1'))],
+        },
+    },
+}
+
+# Chat settings
+MAX_ATTACHMENT_MB = env.int('MAX_ATTACHMENT_MB', default=10)
+
+# Celery Beat schedule
+CELERY_BEAT_SCHEDULE = {
+    'cleanup-orphaned-uploads': {
+        'task': 'chat.tasks.cleanup_orphaned_uploads',
+        'schedule': 86400.0,  # Run daily (24 hours)
+    },
+    # Monitoring system tasks
+    'cleanup-monitoring-data': {
+        'task': 'monitoring.tasks.cleanup_old_monitoring_data',
+        'schedule': 86400.0,  # Run daily (24 hours)
+        'kwargs': {'days': 30},  # Retain data for 30 days
+    },
+    'generate-missing-thumbnails': {
+        'task': 'monitoring.tasks.generate_missing_thumbnails',
+        'schedule': 3600.0,  # Run hourly
+    },
+    'update-device-status': {
+        'task': 'monitoring.tasks.update_device_status',
+        'schedule': 300.0,  # Run every 5 minutes
+    },
+    'calculate-productivity-metrics': {
+        'task': 'monitoring.tasks.calculate_productivity_metrics',
+        'schedule': 3600.0,  # Run hourly
+    },
+    'send-idle-alerts': {
+        'task': 'monitoring.tasks.send_idle_alerts',
+        'schedule': 900.0,  # Run every 15 minutes
+    },
+}
+
+# Monitoring system settings
+MONITORING_STORAGE_PATH = env('MONITORING_STORAGE_PATH', default=str(BASE_DIR / 'monitoring_data'))
+STORAGE_DRIVER = env('STORAGE_DRIVER', default='local')  # local or s3
+JWT_SECRET = env('JWT_SECRET', default=SECRET_KEY)
+
+# Monitoring logging configuration
+import os
+from pathlib import Path
+
+# Ensure logs directory exists
+LOGS_DIR = BASE_DIR / 'logs'
+LOGS_DIR.mkdir(exist_ok=True)
+
+LOGGING = {
+    'version': 1,
+    'disable_existing_loggers': False,
+    'formatters': {
+        'verbose': {
+            'format': '{levelname} {asctime} {module} {process:d} {thread:d} {message}',
+            'style': '{',
+        },
+        'simple': {
+            'format': '{levelname} {message}',
+            'style': '{',
+        },
+        'json': {
+            'format': '{"timestamp": "%(asctime)s", "logger": "%(name)s", "level": "%(levelname)s", "message": "%(message)s", "module": "%(module)s", "function": "%(funcName)s", "line": %(lineno)d}',
+            'datefmt': '%Y-%m-%d %H:%M:%S',
+        },
+    },
+    'handlers': {
+        'file': {
+            'level': 'INFO',
+            'class': 'logging.handlers.RotatingFileHandler',
+            'filename': str(LOGS_DIR / 'django.log'),
+            'maxBytes': 1024*1024*15,  # 15MB
+            'backupCount': 10,
+            'formatter': 'verbose',
+        },
+        'console': {
+            'level': 'INFO',
+            'class': 'logging.StreamHandler',
+            'formatter': 'simple',
+        },
+        'monitoring_file': {
+            'level': 'INFO',
+            'class': 'logging.handlers.RotatingFileHandler',
+            'filename': str(LOGS_DIR / 'monitoring.log'),
+            'maxBytes': 1024*1024*15,  # 15MB
+            'backupCount': 10,
+            'formatter': 'json',
+        },
+    },
+    'loggers': {
+        'django': {
+            'handlers': ['console'],
+            'level': 'INFO',
+            'propagate': True,
+        },
+        'monitoring': {
+            'handlers': ['console'],
+            'level': 'INFO',
+            'propagate': False,
+        },
+        'monitoring.heartbeat': {
+            'handlers': ['console'],
+            'level': 'INFO',
+            'propagate': False,
+        },
+        'monitoring.screenshot': {
+            'handlers': ['console'],
+            'level': 'INFO',
+            'propagate': False,
+        },
+        'monitoring.device': {
+            'handlers': ['console'],
+            'level': 'INFO',
+            'propagate': False,
+        },
+        'monitoring.analytics': {
+            'handlers': ['console'],
+            'level': 'INFO',
+            'propagate': False,
+        },
+        'monitoring.storage': {
+            'handlers': ['console'],
+            'level': 'INFO',
+            'propagate': False,
+        },
+        'monitoring.security': {
+            'handlers': ['console'],
+            'level': 'WARNING',
+            'propagate': False,
+        },
+        'monitoring.performance': {
+            'handlers': ['console'],
+            'level': 'INFO',
+            'propagate': False,
+        },
+        'monitoring.cleanup': {
+            'handlers': ['console'],
+            'level': 'INFO',
+            'propagate': False,
+        },
+        'monitoring.websocket': {
+            'handlers': ['console'],
+            'level': 'INFO',
+            'propagate': False,
+        },
+        'monitoring.api': {
+            'handlers': ['console'],
+            'level': 'INFO',
+            'propagate': False,
+        },
+    },
+}
+
+# AWS S3 settings (if using S3 storage)
+AWS_S3_BUCKET_NAME = env('AWS_S3_BUCKET_NAME', default=None)
+AWS_S3_REGION = env('AWS_S3_REGION', default='us-east-1')
+AWS_ACCESS_KEY_ID = env('AWS_ACCESS_KEY_ID', default=None)
+AWS_SECRET_ACCESS_KEY = env('AWS_SECRET_ACCESS_KEY', default=None)

@@ -17,7 +17,13 @@ class RolePermission(BasePermission):
     roles = []
 
     def has_permission(self, request, view):
+        # If the view specifies allowed_roles, always check roles regardless of method
+        allowed_roles = getattr(view, 'allowed_roles', self.roles)
+        if allowed_roles:
+            return user_has_any_role(request.user, allowed_roles)
+        
+        # Fallback to authentication check for SAFE methods when no roles specified
         if request.method in SAFE_METHODS:
             return request.user.is_authenticated
-        return user_has_any_role(request.user, getattr(view, 'allowed_roles', self.roles))
+        return user_has_any_role(request.user, self.roles)
 
