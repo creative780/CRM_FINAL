@@ -14,6 +14,32 @@ type Props = {
 
 export default function QuotationFormWithPreview({ formData, setFormData }: Props) {
   const previewRef = useRef(null);
+  
+  // Debug TRN field
+  console.log('QuotationFormWithPreview - TRN value:', formData.trn);
+  console.log('QuotationFormWithPreview - Full formData:', formData);
+
+  const handleProductsChange = (products: any[]) => {
+    // Convert products to the format expected by OrderIntakeForm
+    const configuredProducts = products.map(product => ({
+      id: product.id,
+      productId: product.id,
+      name: product.name,
+      quantity: product.quantity,
+      price: product.unitPrice || product.price,
+      attributes: product.attributes || {},
+      sku: product.sku || '',
+      imageUrl: product.imageUrl || '',
+      customRequirements: product.customRequirements || '',
+    }));
+
+    setFormData({
+      ...formData,
+      products: products,
+      items: products, // Also update items for compatibility
+      selectedProducts: configuredProducts, // Add this for OrderIntakeForm compatibility
+    });
+  };
 
   return (
     <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 pt-4 lg:pt-6 px-2 lg:px-0">
@@ -39,8 +65,8 @@ export default function QuotationFormWithPreview({ formData, setFormData }: Prop
             />
           </div>
 
-          {/* NEW: Customer fields directly under notes */}
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+          {/* Customer fields directly under notes */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
             <div className="flex flex-col">
               <label className="text-sm font-medium text-gray-700 mb-1">Customer Name</label>
               <input
@@ -75,6 +101,21 @@ export default function QuotationFormWithPreview({ formData, setFormData }: Prop
                 className="w-full border border-gray-300 rounded px-3 py-2 focus:outline-none focus:ring-2 focus:ring-black"
               />
             </div>
+          </div>
+
+          {/* TRN field on separate line */}
+          <div className="flex flex-col">
+            <label className="text-sm font-medium text-gray-700 mb-1">TRN</label>
+            <input
+              type="text"
+              value={formData.trn || ""}
+              onChange={(e) => {
+                console.log('TRN field changed to:', e.target.value);
+                setFormData({ ...formData, trn: e.target.value });
+              }}
+              placeholder="e.g., 100362033100003"
+              className="w-full border border-gray-300 rounded px-3 py-2 focus:outline-none focus:ring-2 focus:ring-black"
+            />
           </div>
 
           {/* Pricing Status */}
@@ -202,7 +243,11 @@ export default function QuotationFormWithPreview({ formData, setFormData }: Prop
       {/* RIGHT: Live preview */}
       <div className="w-full">
         <div className="sticky top-0">
-          <QuotationPreview formData={formData} />
+          <QuotationPreview 
+            formData={formData} 
+            onProductsChange={handleProductsChange}
+            isEditable={true}
+          />
         </div>
       </div>
     </div>

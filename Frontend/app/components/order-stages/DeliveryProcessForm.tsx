@@ -37,7 +37,21 @@ export default function DeliveryProcessForm({
       console.log('DeliveryProcessForm: Current riderPhoto:', riderPhoto);
       if (storedRiderPhotos.length > 0 && !riderPhoto) {
         console.log('DeliveryProcessForm: Setting rider photo from localStorage');
-        setRiderPhoto(storedRiderPhotos[0]);
+        const storedMeta = storedRiderPhotos[0];
+        
+        // Convert StoredFileMeta to File object
+        fetch(storedMeta.url || '')
+          .then(response => response.blob())
+          .then(blob => {
+            const file = new File([blob], storedMeta.name, {
+              type: storedMeta.type,
+              lastModified: storedMeta.lastModified,
+            });
+            setRiderPhoto(file);
+          })
+          .catch(error => {
+            console.error('Failed to convert StoredFileMeta to File:', error);
+          });
       }
     });
   }, [riderPhoto]);

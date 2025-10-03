@@ -474,7 +474,7 @@ export default function MonitoringDashboard() {
             <CardContent>
               <div className="text-2xl font-bold text-green-600">
                 {devices.length > 0 
-                  ? Math.round(devices.reduce((sum, d) => sum + (d.latest_heartbeat?.productivity_score || 0), 0) / devices.length)
+                  ? Math.round(devices.reduce((sum, d) => sum + ((d.latest_heartbeat as any)?.productivity_score || 0), 0) / devices.length)
                   : 0}%
               </div>
               <p className="text-xs text-muted-foreground">
@@ -635,7 +635,7 @@ export default function MonitoringDashboard() {
                       <div className="flex items-center space-x-2">
                         <h3 className="font-semibold">{device.hostname}</h3>
                         {/* Phase 2: Idle Alert Indicator */}
-                        {device.latest_heartbeat?.idle_alert && (
+                        {(device.latest_heartbeat as any)?.idle_alert && (
                           <div className="flex items-center space-x-1">
                             <div className="w-2 h-2 rounded-full bg-orange-500 animate-pulse" />
                             <span className="text-xs text-orange-600 font-medium">IDLE</span>
@@ -709,30 +709,30 @@ export default function MonitoringDashboard() {
                     <div className="flex items-center justify-between">
                       <span className="text-sm font-medium">Productivity Score</span>
                       <span className="text-sm font-bold text-green-600">
-                        {device.latest_heartbeat.productivity_score?.toFixed(1) || '0.0'}%
+                        {(device.latest_heartbeat as any).productivity_score?.toFixed(1) || '0.0'}%
                       </span>
                     </div>
                     <Progress 
-                      value={device.latest_heartbeat.productivity_score || 0} 
+                      value={(device.latest_heartbeat as any).productivity_score || 0} 
                       className="h-2" 
                     />
                     
                     <div className="grid grid-cols-2 gap-2 text-xs">
                       <div className="flex justify-between">
                         <span>Keystrokes:</span>
-                        <span className="font-medium">{device.latest_heartbeat.keystroke_count || 0}</span>
+                        <span className="font-medium">{(device.latest_heartbeat as any).keystroke_count || 0}</span>
                       </div>
                       <div className="flex justify-between">
                         <span>Clicks:</span>
-                        <span className="font-medium">{device.latest_heartbeat.mouse_click_count || 0}</span>
+                        <span className="font-medium">{(device.latest_heartbeat as any).mouse_click_count || 0}</span>
                       </div>
                       <div className="flex justify-between">
                         <span>Active Time:</span>
-                        <span className="font-medium">{device.latest_heartbeat.active_time_minutes?.toFixed(1) || '0.0'}m</span>
+                        <span className="font-medium">{(device.latest_heartbeat as any).active_time_minutes?.toFixed(1) || '0.0'}m</span>
                       </div>
                       <div className="flex justify-between">
                         <span>Session:</span>
-                        <span className="font-medium">{device.latest_heartbeat.session_duration_minutes?.toFixed(1) || '0.0'}m</span>
+                        <span className="font-medium">{(device.latest_heartbeat as any).session_duration_minutes?.toFixed(1) || '0.0'}m</span>
                       </div>
                     </div>
                   </div>
@@ -895,14 +895,14 @@ export default function MonitoringDashboard() {
                 </div>
 
                 {/* Recent Activity */}
-                {selectedDevice.heartbeats && selectedDevice.heartbeats.length > 0 && (
+                {(selectedDevice as any).heartbeats && (selectedDevice as any).heartbeats.length > 0 && (
                   <Card className="mt-6">
                     <CardHeader>
                       <CardTitle>Recent Activity (Last 10 Heartbeats)</CardTitle>
                     </CardHeader>
                     <CardContent>
                       <div className="space-y-2 max-h-60 overflow-y-auto">
-                        {selectedDevice.heartbeats.slice(0, 10).map((heartbeat: any, index: number) => (
+                        {(selectedDevice as any).heartbeats.slice(0, 10).map((heartbeat: any, index: number) => (
                           <div key={index} className="flex items-center justify-between p-2 bg-gray-50 rounded">
                             <div>
                               <span className="text-sm font-medium">

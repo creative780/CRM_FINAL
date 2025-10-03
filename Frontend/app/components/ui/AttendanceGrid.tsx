@@ -64,7 +64,7 @@ export default function AttendanceGrid() {
     );
   }, [searchTerm]);
 
-  const handleDateRangeChange = (e) => {
+  const handleDateRangeChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
     const [start, end] = e.target.value.split("-").map(Number);
     setDateRange({ start, end });
   };
@@ -77,7 +77,7 @@ export default function AttendanceGrid() {
     Employee: emp.name,
     ...emp.days.reduce((acc, status, i) => ({
       ...acc,
-      [`Day ${i + 1}`]: statusLabel[status],
+      [`Day ${i + 1}`]: statusLabel[status as keyof typeof statusLabel],
     }), {}),
   }));
 
@@ -168,8 +168,8 @@ export default function AttendanceGrid() {
                     <td
                       key={j}
                       data-tooltip-id={`tooltip-${i}-${j}`}
-                      data-tooltip-content={statusLabel[status]}
-                      className={`px-2 py-2 text-center cursor-pointer rounded transition duration-200 ${isDarkMode ? statusColors.dark[status] : statusColors.light[status]}`}
+                      data-tooltip-content={statusLabel[status as keyof typeof statusLabel]}
+                      className={`px-2 py-2 text-center cursor-pointer rounded transition duration-200 ${isDarkMode ? statusColors.dark[status as keyof typeof statusColors.dark] : statusColors.light[status as keyof typeof statusColors.light]}`}
                     >
                       {status}
                       <Tooltip id={`tooltip-${i}-${j}`} place="top" />

@@ -34,6 +34,7 @@ export interface OrderIntakeFormValues {
   clientName: string;
   companyName: string;
   phone: string;
+  trn: string;
   email: string;
   address: string;
   specifications: string;
@@ -87,6 +88,7 @@ export const createOrderIntakeDefaults = (): OrderIntakeFormValues => {
     clientName: "",
     companyName: "",
     phone: "",
+    trn: "",
     email: "",
     address: "",
     specifications: "",
@@ -119,6 +121,9 @@ const OrderIntakeForm: React.FC<Props> = ({
     controlledFormData ? { ...createOrderIntakeDefaults(), ...controlledFormData } : createOrderIntakeDefaults(),
   );
   const formData = (isControlled ? controlledFormData : internalFormData) || createOrderIntakeDefaults();
+  
+  // Use selectedProducts from formData if available (for quotation stage compatibility)
+  const effectiveSelectedProducts = formData.selectedProducts || selectedProducts;
   const setFormData = useCallback(
     (update: any) => {
       if (isControlled && controlledSetFormData) {
@@ -139,7 +144,12 @@ const OrderIntakeForm: React.FC<Props> = ({
   useEffect(() => {
     const storedFiles = loadFileMetaFromStorage('orderLifecycle_intakeFiles');
     if (storedFiles.length > 0) {
-      setIntakeFiles(storedFiles);
+      // Convert StoredFileMeta to UploadMeta
+      const uploadFiles = storedFiles.map(file => ({
+        ...file,
+        url: file.url || ''
+      }));
+      setIntakeFiles(uploadFiles);
     }
   }, []);
 
@@ -194,7 +204,7 @@ const OrderIntakeForm: React.FC<Props> = ({
     setIsClient(true);
   }, []);
   
-  const hasAtLeastOneProduct = isClient && Array.isArray(selectedProducts) && selectedProducts.length > 0;
+  const hasAtLeastOneProduct = isClient && Array.isArray(effectiveSelectedProducts) && effectiveSelectedProducts.length > 0;
 
   /** ===== Validation ===== */
   const hasAtLeastOneFile = intakeFiles.length > 0;
@@ -215,8 +225,8 @@ const OrderIntakeForm: React.FC<Props> = ({
     const time = toLocalHM(now);
 
     const titleFromProducts =
-      selectedProducts.length > 0
-        ? selectedProducts.map((p) => `${p.quantity} x ${p.name}`).join(", ")
+      effectiveSelectedProducts.length > 0
+        ? effectiveSelectedProducts.map((p) => `${p.quantity} x ${p.name}`).join(", ")
         : "Custom Order";
 
     const row: Row = {
@@ -305,7 +315,7 @@ const OrderIntakeForm: React.FC<Props> = ({
             </div>
           ) : hasAtLeastOneProduct ? (
             <SelectedProductsList
-              items={selectedProducts}
+              items={effectiveSelectedProducts}
               onRemove={onRemoveProduct}
               onEdit={onEditProduct}
               className="pt-1"
@@ -325,6 +335,18 @@ const OrderIntakeForm: React.FC<Props> = ({
             value={formData.phone ?? ""}
             onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
             className="w-full border border-gray-300 rounded px-3 py-2 focus:outline-none focus:ring-2 focus:ring-black"
+          />
+        </div>
+
+        {/* TRN */}
+        <div className="flex flex-col">
+          <label className="text-sm font-medium text-gray-700 mb-1">TRN</label>
+          <input
+            type="text"
+            value={formData.trn ?? ""}
+            onChange={(e) => setFormData({ ...formData, trn: e.target.value })}
+            className="w-full border border-gray-300 rounded px-3 py-2 focus:outline-none focus:ring-2 focus:ring-black"
+            placeholder="Enter TRN number..."
           />
         </div>
 

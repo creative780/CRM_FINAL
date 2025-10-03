@@ -1,6 +1,12 @@
 import React from "react";
 
-export function Button({ children, variant = "default", className = "", ...props }: any) {
+interface ButtonProps extends React.ButtonHTMLAttributes<HTMLButtonElement> {
+  children: React.ReactNode;
+  variant?: "default" | "outline";
+  className?: string;
+}
+
+export function Button({ children, variant = "default", className = "", ...props }: ButtonProps) {
   const baseStyle = "px-4 py-2 rounded text-sm font-medium";
   const variants = {
     default: "bg-blue-600 text-white hover:bg-blue-700",

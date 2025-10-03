@@ -31,8 +31,8 @@ export default function DashboardNavbar() {
     pathname === route || pathname.startsWith(route + "/");
 
   const getLinkClass = (active: boolean) =>
-    `px-3 py-1 rounded-full transition-all duration-200 whitespace-nowrap ${
-      active ? "bg-white text-black font-medium shadow-inner" : "text-gray-200 hover:text-white"
+    `px-2.5 py-1 rounded-full transition-all duration-200 whitespace-nowrap text-sm font-medium inline-block min-w-0 ${
+      active ? "bg-white text-black shadow-inner" : "text-gray-200 hover:text-white font-normal"
     }`;
 
   // Role → Orders base URL
@@ -48,17 +48,25 @@ export default function DashboardNavbar() {
   const ADMIN_LINKS = [
     { id: "dashboard", label: "Dashboard", href: "/admin/dashboard" },
     { id: "orders", label: "Orders", href: ordersUrlByRole.admin, isOrders: true },
+    // Design Approvals moved to Orders page tab
     { id: "leads", label: "Leads", href: "/admin/leads" },
     { id: "clients", label: "Clients", href: "/admin/client" },
     { id: "attendance", label: "Attendance", href: "/admin/attendence" },
     { id: "monitoring", label: "Employee Monitoring", href: "/admin/monitoring-new" },
+    { id: "employee-management", label: "Employee Management", href: "/admin/hr/employee-management" },
     { id: "salary", label: "Salary Builder", href: "/admin/hr/salary-builder" },
     { id: "activity", label: "Activity Logs", href: "/admin/activity-logs" },
-        { id: "chat", label: "Chat", href: "/admin/chat" },
-
+    { id: "chat", label: "Chat", href: "/admin/chat" },
   ] as const;
 
-  const LIMITED_LINKS_FOR_SDP = (r: RoleKey) => [
+  const SALES_LINKS = [
+    { id: "dashboard", label: "Dashboard", href: "/admin/dashboard" },
+    { id: "orders", label: "Orders", href: ordersUrlByRole.sales, isOrders: true },
+    // Design Approvals moved to Orders page tab
+    { id: "attendance", label: "Attendance", href: "/admin/attendence" },
+  ] as const;
+
+  const LIMITED_LINKS_FOR_DP = (r: RoleKey) => [
     { id: "dashboard", label: "Dashboard", href: "/admin/dashboard" },
     { id: "orders", label: "Orders", href: ordersUrlByRole[r] ?? ordersUrlByRole.default, isOrders: true },
     { id: "attendance", label: "Attendance", href: "/admin/attendence" },
@@ -69,10 +77,10 @@ export default function DashboardNavbar() {
     Array<{ id: string; label: string; href: string; isOrders?: boolean }>
   > = {
     admin: [...ADMIN_LINKS],
-    sales: [...LIMITED_LINKS_FOR_SDP("sales")],
-    designer: [...LIMITED_LINKS_FOR_SDP("designer")],
-    production: [...LIMITED_LINKS_FOR_SDP("production")],
-    default: [...LIMITED_LINKS_FOR_SDP("sales")],
+    sales: [...SALES_LINKS],
+    designer: [...LIMITED_LINKS_FOR_DP("designer")],
+    production: [...LIMITED_LINKS_FOR_DP("production")],
+    default: [...LIMITED_LINKS_FOR_DP("sales")],
   };
 
   const navLinks = useMemo(() => ROLE_NAV[role] ?? ROLE_NAV.default, [role]);
@@ -124,21 +132,25 @@ export default function DashboardNavbar() {
     pathname.startsWith("/admin/orders/");
 
   return (
-    <nav className="sticky top-0 z-50 bg-[#891F1A] text-white px-4 py-2 flex items-center justify-between gap-6 overflow-hidden whitespace-nowrap rounded-xl shadow-md mb-4">
+    <nav className="sticky top-0 z-50 bg-[#891F1A] text-white px-4 py-2 flex items-center justify-between gap-4 overflow-hidden whitespace-nowrap rounded-xl shadow-md mb-4 h-14">
       {/* Left: Logo + Brand */}
-      <div className="flex items-center gap-2 shrink-0">
-        <img src="/logo.jpg" alt="Romix Logo" className="w-6 h-6" />
-        <span className="font-semibold text-xl">Creative-Connect</span>
-        
+      <div className="flex items-center gap-2 shrink-0 h-full">
+        <img src="/logo.jpg" alt="Romix Logo" className="w-6 h-6 flex-shrink-0" />
+        <span className="font-semibold text-lg whitespace-nowrap">Creative-Connect</span>
       </div>
 
       {/* Center: Role-Based Nav (hide until ready to prevent flicker) */}
-      <div className="flex gap-3 items-center text-sm font-medium shrink-0">
+      <div className="flex gap-2 items-center justify-center text-sm font-medium shrink-0 flex-1">
         {ready &&
           navLinks.map((link) => {
             const active = link.isOrders ? isOrdersActive : isActive(link.href);
             return (
-              <Link key={link.id} href={link.href} className={getLinkClass(active)}>
+              <Link 
+                key={link.id} 
+                href={link.href} 
+                className={getLinkClass(active)}
+                style={{ lineHeight: '1.25rem' }}
+              >
                 {link.label}
               </Link>
             );
@@ -146,14 +158,15 @@ export default function DashboardNavbar() {
       </div>
 
       {/* Right: Profile + Logout */}
-      <div className="flex items-center gap-3 shrink-0">
-        <div className="flex items-center gap-2">
-          <FaUserCircle className="text-white text-2xl" />
-          <span className="text-sm font-medium text-white">{username || "Guest"}</span>
+      <div className="flex items-center gap-2 shrink-0 h-full">
+        <div className="flex items-center gap-1.5 h-full">
+          <FaUserCircle className="text-white text-xl flex-shrink-0" />
+          <span className="text-xs font-medium text-white whitespace-nowrap">{username || "Guest"}</span>
         </div>
         <button
           onClick={handleLogout}
-          className="text-sm px-3 py-1 bg-red-500 hover:bg-red-600 rounded-full font-medium transition"
+          className="text-xs px-2.5 py-1 bg-red-500 hover:bg-red-600 rounded-full font-medium transition whitespace-nowrap"
+          style={{ lineHeight: '1rem' }}
         >
           Logout
         </button>

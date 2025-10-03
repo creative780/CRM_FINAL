@@ -5,6 +5,22 @@ import { cn } from "@/lib/utils";
 import { Pencil, Trash2 } from "lucide-react";
 import ScrollAreaWithRail from "@/app/components/ScrollAreaWithRail";
 
+type SalaryItem = {
+  id: number;
+  firstName: string;
+  lastName: string;
+  phone: string;
+  designation: string;
+  branch: string;
+  baseSalary: number;
+  loans: number;
+  advances: number;
+  fines: number;
+  allowances: number;
+  month: string;
+  year: number;
+};
+
 const initialSalaryData = Array.from({ length: 30 }).map((_, index) => {
   const isDubai = index % 2 === 0;
   const monthIndex = index % 12;
@@ -45,8 +61,8 @@ export default function SalaryTablePage() {
   const [locationFilter, setLocationFilter] = useState("all");
   const [monthFilter, setMonthFilter] = useState("all");
   const [yearFilter, setYearFilter] = useState("all");
-  const [editingItem, setEditingItem] = useState(null);
-  const [formData, setFormData] = useState({});
+  const [editingItem, setEditingItem] = useState<number | null>(null);
+  const [formData, setFormData] = useState<Partial<SalaryItem>>({});
   const scrollRef = useRef<HTMLDivElement>(null);
 
   const filtered = salaryData.filter((item) => {
@@ -58,12 +74,12 @@ export default function SalaryTablePage() {
     return locationMatch && monthMatch && yearMatch;
   });
 
-  const handleEditClick = (item) => {
+  const handleEditClick = (item: SalaryItem) => {
     setFormData({ ...item });
     setEditingItem(item.id);
   };
 
-  const handleDeleteClick = (id) => {
+  const handleDeleteClick = (id: number) => {
     const confirmDelete = window.confirm(
       "Are you sure you want to delete this entry?"
     );
@@ -72,7 +88,7 @@ export default function SalaryTablePage() {
     }
   };
 
-  const handleInputChange = (key, value) => {
+  const handleInputChange = (key: string, value: any) => {
     setFormData((prev) => ({ ...prev, [key]: value }));
   };
 
@@ -145,7 +161,6 @@ export default function SalaryTablePage() {
             ref={scrollRef}
             heightClass="h-[calc(100vh-6rem)]" // adjust if your header area grows/shrinks
             railPosition="outside"
-            contentRightGap={12} // keep consistent visual gap to the rail
           >
             {/* Visual card container (no overflow here; sticky header needs it) */}
             <div className="rounded-xl shadow bg-white">
@@ -278,7 +293,7 @@ export default function SalaryTablePage() {
                       </label>
                       <input
                         type="text"
-                        value={formData[key]}
+                        value={(formData as any)[key] || ''}
                         onChange={(e) => handleInputChange(key, e.target.value)}
                         className="mt-1 w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-[#891F1A] text-sm"
                       />

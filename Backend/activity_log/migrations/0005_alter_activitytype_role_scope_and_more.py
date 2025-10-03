@@ -6,7 +6,7 @@ from django.db import migrations, models
 class Migration(migrations.Migration):
 
     dependencies = [
-        ('activity_log', '0004_alter_activityevent_actor_role_and_more'),
+        ('activity_log', '0003_seed_activity_types'),
     ]
 
     operations = [

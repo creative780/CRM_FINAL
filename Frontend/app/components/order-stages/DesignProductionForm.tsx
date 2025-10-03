@@ -49,12 +49,16 @@ export default function OrderIntakeForm({ formData, setFormData }: any) {
     console.log('DesignProductionForm: Loading requirements files from localStorage');
     // Use the safe file storage function that handles quota limits
     import('@/app/lib/fileStorage').then(({ loadFilesFromStorageSafe }) => {
-      const storedFiles = loadFilesFromStorageSafe('orderLifecycle_requirementsFiles');
-      console.log('DesignProductionForm: Stored files:', storedFiles);
+      const storedFileMeta = loadFilesFromStorageSafe('orderLifecycle_requirementsFiles');
+      console.log('DesignProductionForm: Stored file metadata:', storedFileMeta);
       console.log('DesignProductionForm: Current formData.requirementsFiles:', formData.requirementsFiles);
-      if (storedFiles.length > 0 && (!formData.requirementsFiles || formData.requirementsFiles.length === 0)) {
-        console.log('DesignProductionForm: Setting requirements files from localStorage');
-        setFormData((prev: any) => ({ ...prev, requirementsFiles: storedFiles }));
+      
+      // Don't automatically restore files from localStorage to avoid conflicts with actual file uploads
+      // The metadata is just for display purposes when files were too large to store
+      if (storedFileMeta.length > 0) {
+        console.log('DesignProductionForm: Found stored file metadata (files were too large for localStorage)');
+        // Store metadata separately for display purposes
+        setFormData((prev: any) => ({ ...prev, storedRequirementsMeta: storedFileMeta }));
       }
     });
   }, []);
@@ -117,7 +121,7 @@ export default function OrderIntakeForm({ formData, setFormData }: any) {
                       const newFiles = selectedFiles.filter(
                         (file) =>
                           !existingFiles.some(
-                            (existing) =>
+                            (existing: any) =>
                               existing.name === file.name && existing.size === file.size
                           )
                       );
@@ -190,6 +194,53 @@ export default function OrderIntakeForm({ formData, setFormData }: any) {
                       </div>
                     );
                   })}
+                </div>
+              )}
+
+              {/* Display stored file metadata when files were too large for localStorage */}
+              {formData.storedRequirementsMeta && formData.storedRequirementsMeta.length > 0 && (
+                <div className="mt-3">
+                  <div className="bg-blue-50 border border-blue-200 rounded px-3 py-2 mb-3">
+                    <p className="text-sm text-blue-800">
+                      📝 Previous files were too large to store fully - metadata preserved:
+                    </p>
+                  </div>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    {formData.storedRequirementsMeta.map((meta: any, index: number) => {
+                      const fileName = meta.name || `file_${index}`;
+                      const fileExtension = fileName.split(".").pop()?.toLowerCase();
+                      const isImage = ["jpg", "jpeg", "png", "gif", "bmp"].includes(fileExtension || "");
+                      const isPdf = fileExtension === "pdf";
+                      const isDoc = ["doc", "docx"].includes(fileExtension || "");
+
+                      const getIcon = () => {
+                        if (isImage) return "🖼️";
+                        if (isPdf) return "📄";
+                        if (isDoc) return "📝";
+                        return "📁";
+                      };
+
+                      return (
+                        <div
+                          key={index}
+                          className="flex items-center justify-between border border-gray-300 rounded px-3 py-2 bg-gray-50 shadow-sm"
+                        >
+                          <div className="flex items-center gap-2 overflow-hidden">
+                            <span className="text-xl">{getIcon()}</span>
+                            <div className="flex flex-col overflow-hidden">
+                              <span className="text-sm truncate text-gray-800 font-medium">
+                                {fileName}
+                              </span>
+                              <span className="text-xs text-gray-500">
+                                {(meta.size / 1024).toFixed(1)} KB (metadata only)
+                              </span>
+                            </div>
+                          </div>
+                          <span className="text-xs text-gray-400">📋</span>
+                        </div>
+                      );
+                    })}
+                  </div>
                 </div>
               )}
             </div>

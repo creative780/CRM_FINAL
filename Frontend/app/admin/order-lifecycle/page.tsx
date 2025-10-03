@@ -73,7 +73,7 @@ const STAGE_REGISTRY: Record<
       onAddProduct?: () => void;
       onRemoveProduct?: (id: string) => void;
       onEditProduct?: (id: string) => void;
-    }) => JSX.Element;
+    }) => React.ReactElement;
   }
 > = {
   orderIntake: {
@@ -108,7 +108,23 @@ const STAGE_REGISTRY: Record<
   quotation: {
     label: "Quotation & Pricing",
     requiredFields: ["labourCost", "finishingCost", "paperCost"],
-    render: ({ formData, setFormData }) => <QuotationForm formData={formData} setFormData={setFormData} />,
+    render: ({ 
+      formData, 
+      setFormData, 
+      selectedProducts = [], 
+      onAddProduct, 
+      onRemoveProduct, 
+      onEditProduct 
+    }) => (
+      <QuotationForm 
+        formData={formData} 
+        setFormData={setFormData}
+        selectedProducts={selectedProducts}
+        onAddProduct={onAddProduct}
+        onRemoveProduct={onRemoveProduct}
+        onEditProduct={onEditProduct}
+      />
+    ),
   },
   designProduction: {
     label: "Design & Production",
@@ -205,26 +221,27 @@ export default function OrderLifecyclePage() {
     if (typeof window === "undefined") {
       return {
         clientName: "",
+        companyName: "",
+        trn: "",
         specifications: "",
         urgency: "",
         items: [],
         products: [],
         status: "New",
-        rawMaterialCost: 0,
-        labourCost: 0,
-        finishingCost: 0,
-        paperCost: 0,
-        inkCost: 0,
-        machineCost: 0,
-        designCost: 0,
-        packagingCost: 0,
-        deliveryCost: 0,
-        discount: 0,
-        advancePaid: 0,
+        rawMaterialCost: "",
+        labourCost: "",
+        finishingCost: "",
+        paperCost: "",
+        inkCost: "",
+        machineCost: "",
+        designCost: "",
+        packagingCost: "",
+        deliveryCost: "",
+        discount: "",
+        advancePaid: "",
         requirementsFiles: [],
         sku: "",
-        qty: 0,
-        phone: "",
+        qty: "",
         deliveryCode: "",
         deliveryStatus: "Dispatched",
       };
@@ -239,26 +256,27 @@ export default function OrderLifecyclePage() {
       console.log('Loading existing order from URL, skipping localStorage');
       return {
         clientName: "",
+        companyName: "",
+        trn: "",
         specifications: "",
         urgency: "",
         items: [],
         products: [],
         status: "New",
-        rawMaterialCost: 0,
-        labourCost: 0,
-        finishingCost: 0,
-        paperCost: 0,
-        inkCost: 0,
-        machineCost: 0,
-        designCost: 0,
-        packagingCost: 0,
-        deliveryCost: 0,
-        discount: 0,
-        advancePaid: 0,
+        rawMaterialCost: "",
+        labourCost: "",
+        finishingCost: "",
+        paperCost: "",
+        inkCost: "",
+        machineCost: "",
+        designCost: "",
+        packagingCost: "",
+        deliveryCost: "",
+        discount: "",
+        advancePaid: "",
         requirementsFiles: [],
         sku: "",
-        qty: 0,
-        phone: "",
+        qty: "",
         deliveryCode: "",
         deliveryStatus: "Dispatched",
       };
@@ -281,20 +299,20 @@ export default function OrderLifecyclePage() {
       items: [],
       products: [],
       status: "New",
-      rawMaterialCost: 0,
-      labourCost: 0,
-      finishingCost: 0,
-      paperCost: 0,
-      inkCost: 0,
-      machineCost: 0,
-      designCost: 0,
-      packagingCost: 0,
-      deleiveryCost: 0,
-      discount: 0,
-      advancePaid: 0,
+      rawMaterialCost: "",
+      labourCost: "",
+      finishingCost: "",
+      paperCost: "",
+      inkCost: "",
+      machineCost: "",
+      designCost: "",
+      packagingCost: "",
+      deleiveryCost: "",
+      discount: "",
+      advancePaid: "",
       requirementsFiles: [],
       sku: "",
-      qty: 0,
+      qty: "",
       phone: "",
       deliveryCode: "",
       deliveryStatus: "Dispatched",
@@ -329,6 +347,13 @@ export default function OrderLifecyclePage() {
 
     return [];
   });
+
+  // Sync selectedProducts with formData.selectedProducts when it changes
+  useEffect(() => {
+    if (formData.selectedProducts && Array.isArray(formData.selectedProducts)) {
+      setSelectedProducts(formData.selectedProducts);
+    }
+  }, [formData.selectedProducts]);
 
   // Auto-save form data to localStorage whenever it changes (only for new orders)
   useEffect(() => {
@@ -457,8 +482,8 @@ export default function OrderLifecyclePage() {
   }, []);
   const serializeSelectedProducts = (items: ConfiguredProduct[] = selectedProducts) =>
     items.map((item) => {
-      const unitPrice = parseFloat(item.price || 0);
-      const quantity = parseInt(item.quantity || 0);
+      const unitPrice = typeof item.price === 'string' ? parseFloat(item.price) : (item.price || 0);
+      const quantity = typeof item.quantity === 'string' ? parseInt(item.quantity) : (item.quantity || 0);
       const lineTotal = unitPrice * quantity;
       
       return {
@@ -468,7 +493,11 @@ export default function OrderLifecyclePage() {
         attributes: item.attributes,
         sku: item.sku,
         unit_price: unitPrice,
-        line_total: lineTotal, // Added line_total calculation
+        line_total: lineTotal,
+        custom_requirements: item.customRequirements || item.design?.customRequirements || "",
+        design_ready: item.design?.ready || false,
+        design_need_custom: item.design?.needCustom || false,
+        design_files_manifest: item.design?.files || []
       };
     });
   const generateCode = async () => {
@@ -539,25 +568,75 @@ export default function OrderLifecyclePage() {
       toast.error("Please save the order first");
       return;
     }
+
+    // Validate required fields
+    if (!formData.printOperator) {
+      toast.error("Please enter the print operator name");
+      return;
+    }
+    if (!formData.printTime) {
+      toast.error("Please set the print time");
+      return;
+    }
+    if (!formData.batchInfo) {
+      toast.error("Please enter batch information");
+      return;
+    }
+
     try {
       const apiBase = process.env.NEXT_PUBLIC_API_BASE || "http://127.0.0.1:8000";
       const token = typeof window !== "undefined" ? localStorage.getItem("admin_token") : null;
+      
+      // Get the first product's SKU and quantity, or use defaults
+      const firstProduct = selectedProducts[0];
+      const sku = firstProduct?.sku || formData.sku || `PRINT-${formData._orderId}`;
+      const qty = firstProduct?.quantity || formData.qty || 1;
+
       const resp = await fetch(
-        `${apiBase}/api/orders/${formData._orderId}/actions/mark-printed/`,
+        `${apiBase}/api/orders/${formData._orderId}/mark_printed/`,
         {
           method: "POST",
-          body: JSON.stringify({ sku: formData.sku, qty: formData.qty }),
+          body: JSON.stringify({ 
+            sku: sku, 
+            qty: qty,
+            print_operator: formData.printOperator,
+            print_time: formData.printTime,
+            batch_info: formData.batchInfo,
+            qa_checklist: formData.qaChecklist || "Quality check completed"
+          }),
           headers: {
             "Content-Type": "application/json",
             ...(token ? { Authorization: `Bearer ${token}` } : {}),
           },
         }
       );
-      if (!resp.ok) throw new Error(`Mark printed failed (${resp.status})`);
-    } catch (e) {
-      toast.error("Failed to mark printed");
+      
+      if (!resp.ok) {
+        const errorText = await resp.text();
+        console.error('Mark printed failed:', resp.status, errorText);
+        throw new Error(`Mark printed failed (${resp.status}): ${errorText}`);
+      }
+
+      const result = await resp.json();
+      
+      // Update form data to reflect printed status
+      setFormData((prev: any) => ({
+        ...prev,
+        printStatus: 'Printed',
+        status: 'Active'
+      }));
+
+      toast.success("Order marked as printed successfully!");
+      
+      // Optionally auto-advance to next stage
+      if (result.ok) {
+        toast.success("Order is ready for client approval!");
+      }
+      
+    } catch (e: any) {
+      toast.error(`Failed to mark printed: ${e.message}`);
       if (process.env.NODE_ENV !== "production") {
-        console.error(e);
+        console.error("Mark printed error:", e);
       }
     }
   };
@@ -570,14 +649,90 @@ export default function OrderLifecyclePage() {
       const headers: any = { "Content-Type": "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}) };
 
       let orderId = formData._orderId;
+      console.log('handleAutoSave - Initial orderId:', orderId, 'Type:', typeof orderId);
+      console.log('handleAutoSave - formData._orderId:', formData._orderId, 'Type:', typeof formData._orderId);
+      
+      // Ensure orderId is a valid integer
+      if (orderId) {
+        // Handle different orderId formats
+        let orderIdStr = orderId.toString().trim();
+        
+        // Remove any non-numeric characters except for the first character if it's a minus sign
+        if (orderIdStr.startsWith('-')) {
+          orderIdStr = '-' + orderIdStr.slice(1).replace(/[^0-9]/g, '');
+        } else {
+          orderIdStr = orderIdStr.replace(/[^0-9]/g, '');
+        }
+        
+        orderId = parseInt(orderIdStr, 10);
+        if (isNaN(orderId) || orderId <= 0) {
+          console.error('Invalid orderId format after cleaning:', formData._orderId, '-> cleaned:', orderIdStr);
+          // Try to get orderId from URL parameters as fallback
+          const urlParams = new URLSearchParams(window.location.search);
+          const urlOrderId = urlParams.get('orderId');
+          if (urlOrderId) {
+            const urlOrderIdInt = parseInt(urlOrderId, 10);
+            if (!isNaN(urlOrderIdInt) && urlOrderIdInt > 0) {
+              console.log('Using orderId from URL as fallback:', urlOrderIdInt);
+              orderId = urlOrderIdInt;
+            } else {
+              orderId = null;
+            }
+          } else {
+            orderId = null;
+          }
+        } else {
+          console.log('OrderId validated successfully:', orderId);
+        }
+      }
+      
       if (!orderId) {
+        console.log('No valid orderId found, creating new order...');
         // Create order if it doesn't exist
-        const requestBody = {
+        // Check if all products have design files before creating items
+        const itemsHaveDesignFiles = selectedProducts.every(product => 
+          product.design?.files && product.design?.files.length > 0
+        );
+        
+        const requestBody: any = {
           clientName: formData.clientName,
+          companyName: formData.companyName,
+          phone: formData.phone,
+          trn: formData.trn,
+          email: formData.email,
+          address: formData.address,
           specs: formData.specifications,
           urgency: formData.urgency,
-          items: serializeSelectedProducts(),
+          items: [], // Always include items field, even if empty
         };
+        
+        // Always include at least one item (backend requires it)
+        if (selectedProducts.length > 0) {
+          if (itemsHaveDesignFiles) {
+            requestBody.items = serializeSelectedProducts();
+            console.log('Items populated with design files:', requestBody.items);
+          } else {
+            // Include products even without design files for order intake stage
+            requestBody.items = serializeSelectedProducts();
+            console.log('Items populated without design files (order intake stage):', requestBody.items);
+          }
+        } else {
+          // Create a placeholder item if no products are selected
+          requestBody.items = [{
+            product_id: null,
+            name: "Placeholder Item",
+            quantity: 1,
+            attributes: {},
+            sku: "",
+            unit_price: 0,
+            line_total: 0,
+            custom_requirements: "",
+            design_ready: false,
+            design_need_custom: false,
+            design_files_manifest: []
+          }];
+          console.log('Created placeholder item for empty order');
+        }
         console.log('Creating order with payload:', requestBody);
         
         const resp = await fetch(`${apiBase}/api/orders/`, {
@@ -600,12 +755,30 @@ export default function OrderLifecyclePage() {
         const created = await resp.json();
         console.log('Order created successfully:', created);
         orderId = created.data?.id || created.id;
+        
+        // Ensure orderId is a valid integer
+        if (orderId) {
+          orderId = parseInt(orderId.toString(), 10);
+          if (isNaN(orderId)) {
+            console.error('Invalid orderId returned from creation:', created.data?.id || created.id);
+            throw new Error('Invalid order ID returned from server');
+          }
+        }
+        
         setFormData((p: any) => ({ ...p, _orderId: orderId }));
+        console.log('Order created and formData updated with orderId:', orderId);
       } else {
+        console.log('Valid orderId found, updating existing order:', orderId);
         // Update existing order with current stage data
         const stageKey = visibleStageKeys[currentIndex];
         let stage = "" as any;
         let payload: any = {};
+        
+        // Only update items if we're past the order intake stage or if all items have design files
+        const shouldUpdateItems = stageKey === "quotation" || stageKey === "designProduction" || stageKey === "printingQA" || stageKey === "clientApproval" || stageKey === "deliveryProcess";
+        const itemsHaveDesignFiles = selectedProducts.every(product => 
+          product.design?.files && product.design?.files.length > 0
+        );
         
         if (stageKey === "quotation") {
           stage = "quotation";
@@ -617,6 +790,16 @@ export default function OrderLifecyclePage() {
             delivery_cost: formData.deliveryCost,
             discount: formData.discount,
             advance_paid: formData.advancePaid,
+            finalPrice: formData.finalPrice,
+            sales_person: typeof window !== "undefined" ? localStorage.getItem("admin_username") || "Unknown User" : "Unknown User",
+            // Order model fields
+            clientName: formData.clientName,
+            companyName: formData.companyName,
+            phone: formData.phone,
+            trn: formData.trn,
+            email: formData.email,
+            address: formData.address,
+            specifications: formData.specifications,
           };
         }
         if (stageKey === "designProduction") {
@@ -654,7 +837,8 @@ export default function OrderLifecyclePage() {
         }
         
         if (stage) {
-          console.log('Updating stage with payload:', { stage, payload });
+          console.log('Updating stage with payload:', { stage, payload, orderId });
+          console.log('API URL:', `${apiBase}/api/orders/${orderId}/`);
           const resp = await fetch(`${apiBase}/api/orders/${orderId}/`, {
             method: "PATCH",
             headers,
@@ -667,26 +851,35 @@ export default function OrderLifecyclePage() {
             }
             const errorText = await resp.text();
             console.error('Stage update failed:', resp.status, errorText);
+            console.error('OrderId used:', orderId, 'Type:', typeof orderId);
             throw new Error(`Stage update failed (${resp.status}): ${errorText}`);
           }
         }
 
-        // Update base order fields
-        const updatePayload = {
-          client_name: formData.clientName,
-          specs: formData.specifications,
-          urgency: formData.urgency,
-          items: serializeSelectedProducts(),
-        };
-        console.log('Updating order with payload:', updatePayload);
-        console.log('Items being sent:', updatePayload.items);
-        console.log('First item structure:', updatePayload.items[0]);
-        
-           const baseUpdate = await fetch(`${apiBase}/api/orders/${orderId}/`, {
-             method: "PATCH",
-             headers,
-             body: JSON.stringify(updatePayload),
-           });
+        // Update base order fields only if we have a valid orderId
+        if (orderId && !isNaN(orderId)) {
+          const updatePayload: any = {
+            client_name: formData.clientName,
+            specs: formData.specifications,
+            urgency: formData.urgency,
+          };
+          
+          // Only include items update if we should update items and they have design files OR if we're creating the order
+          if (shouldUpdateItems && itemsHaveDesignFiles) {
+            updatePayload.items = serializeSelectedProducts();
+          }
+          console.log('Updating order with payload:', updatePayload);
+          console.log('Items being sent:', updatePayload.items);
+          console.log('OrderId for update:', orderId, 'Type:', typeof orderId);
+          if (updatePayload.items && updatePayload.items.length > 0) {
+            console.log('First item structure:', updatePayload.items[0]);
+          }
+          
+             const baseUpdate = await fetch(`${apiBase}/api/orders/${orderId}/`, {
+               method: "PATCH",
+               headers,
+               body: JSON.stringify(updatePayload),
+             });
         
         if (!baseUpdate.ok) {
           if (baseUpdate.status === 401) {
@@ -695,11 +888,21 @@ export default function OrderLifecyclePage() {
           }
           const errorText = await baseUpdate.text();
           console.error('Update order failed:', baseUpdate.status, errorText);
+          console.error('OrderId used for update:', orderId, 'Type:', typeof orderId);
+          
+          // Check if this is a design files validation error and we're not in the design stage
+          if (baseUpdate.status === 400 && errorText.includes('design_files_manifest')) {
+            console.warn('Skipping design files validation during navigation - files will be validated later');
+            return true;
+          }
           
           // For now, log the error but don't fail the auto-save
           // This allows the order creation to succeed even if update fails
           console.warn('Order update failed, but order was created successfully');
           return true;
+        }
+        } else {
+          console.warn('Skipping base order update - invalid orderId:', orderId);
         }
       }
 
@@ -724,6 +927,11 @@ export default function OrderLifecyclePage() {
           headers,
           body: JSON.stringify({
             clientName: formData.clientName,
+            companyName: formData.companyName,
+            phone: formData.phone,
+            trn: formData.trn,
+            email: formData.email,
+            address: formData.address,
             specs: formData.specifications,
             urgency: formData.urgency,
             items: serializeSelectedProducts(),
@@ -754,6 +962,16 @@ export default function OrderLifecyclePage() {
             delivery_cost: formData.deliveryCost,
             discount: formData.discount,
             advance_paid: formData.advancePaid,
+            finalPrice: formData.finalPrice,
+            sales_person: typeof window !== "undefined" ? localStorage.getItem("admin_username") || "Unknown User" : "Unknown User",
+            // Order model fields
+            clientName: formData.clientName,
+            companyName: formData.companyName,
+            phone: formData.phone,
+            trn: formData.trn,
+            email: formData.email,
+            address: formData.address,
+            specifications: formData.specifications,
           };
         }
         if (stageKey === "designProduction") {
@@ -890,9 +1108,24 @@ export default function OrderLifecyclePage() {
       // Check for orderId in URL params first, then formData
       const urlParams = new URLSearchParams(window.location.search);
       const urlOrderId = urlParams.get('orderId');
-      const orderId = urlOrderId || formData._orderId;
+      let orderId = urlOrderId || formData._orderId;
       
-      if (!orderId) return;
+      console.log('loadOrderData - URL orderId:', urlOrderId);
+      console.log('loadOrderData - formData._orderId:', formData._orderId);
+      console.log('loadOrderData - final orderId:', orderId);
+      
+      if (!orderId) {
+        console.log('loadOrderData - No orderId found, skipping load');
+        return;
+      }
+      
+      // Ensure orderId is a valid integer
+      orderId = parseInt(orderId.toString(), 10);
+      if (isNaN(orderId) || orderId <= 0) {
+        console.error('Invalid orderId format from URL or formData:', urlOrderId || formData._orderId);
+        console.log('loadOrderData - Invalid orderId, skipping load');
+        return;
+      }
 
       try {
         const apiBase = process.env.NEXT_PUBLIC_API_BASE || "http://127.0.0.1:8000";
@@ -924,6 +1157,11 @@ export default function OrderLifecyclePage() {
               ...prev,
               _orderId: orderId, // Ensure orderId is set
               clientName: order.client_name || prev.clientName,
+              companyName: order.company_name || prev.companyName,
+              phone: order.phone || prev.phone,
+              trn: order.trn || prev.trn,
+              email: order.email || prev.email,
+              address: order.address || prev.address,
               specifications: order.specs || prev.specifications,
               urgency: order.urgency || prev.urgency,
               items: order.items || prev.items,
@@ -940,6 +1178,7 @@ export default function OrderLifecyclePage() {
               deliveryCost: order.quotation?.delivery_cost || prev.deliveryCost,
               discount: order.quotation?.discount || prev.discount,
               advancePaid: order.quotation?.advance_paid || prev.advancePaid,
+              salesPerson: order.quotation?.sales_person || (typeof window !== "undefined" ? localStorage.getItem("admin_username") || "Unknown User" : "Unknown User"),
               // Load design data if available
               assignedDesigner: order.design_stage?.assigned_designer || prev.assignedDesigner,
               requirementsFiles: order.design_stage?.requirements_files_manifest || prev.requirementsFiles,
@@ -983,10 +1222,27 @@ export default function OrderLifecyclePage() {
             console.log('Updated selectedProducts:', configuredProducts);
             setSelectedProducts(configuredProducts);
           }
+        } else if (response.status === 404) {
+          // Order not found - clear the invalid orderId and treat as new order
+          console.log('Order not found, clearing invalid orderId and treating as new order');
+          setFormData((prev: any) => ({ ...prev, _orderId: null }));
+          
+          // Clear any invalid orderId from URL if present
+          if (urlOrderId) {
+            const newUrl = new URL(window.location.href);
+            newUrl.searchParams.delete('orderId');
+            window.history.replaceState({}, '', newUrl.toString());
+          }
         } else {
+          // Handle other errors (401, 500, etc.)
           const errorText = await response.text();
           console.error('Failed to load order data:', response.status, errorText);
-          toast.error(`Failed to load order data: ${response.status}`);
+          
+          if (response.status === 401) {
+            handleUnauthorized();
+          } else {
+            toast.error(`Failed to load order data: ${response.status}`);
+          }
         }
       } catch (error) {
         console.error("Error loading order data:", error);
@@ -1247,8 +1503,7 @@ export default function OrderLifecyclePage() {
                   advancePaid: 0,
                   requirementsFiles: [],
                   sku: "",
-                  qty: 0,
-                  phone: "",
+                  qty: "",
                   deliveryCode: "",
                   deliveryStatus: "Dispatched",
                 });

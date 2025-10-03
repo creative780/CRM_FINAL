@@ -1,6 +1,10 @@
 "use client";
 
 import { useRef, useState, useEffect } from "react";
+import { Plus, Minus, X } from "lucide-react";
+import ProductSearchModal from "../modals/ProductSearchModal";
+import ProductConfigModal from "../modals/ProductConfigModal";
+import { BaseProduct, ConfiguredProduct } from "../../types/products";
 
 // TypeScript fix for html2pdf global
 declare global {
@@ -9,11 +13,26 @@ declare global {
   }
 }
 
-export default function QuotationPreview({ formData }: any) {
+interface QuotationPreviewProps {
+  formData: any;
+  onProductsChange?: (products: any[]) => void;
+  isEditable?: boolean;
+}
+
+export default function QuotationPreview({ 
+  formData, 
+  onProductsChange,
+  isEditable = false 
+}: QuotationPreviewProps) {
   const printRef = useRef<HTMLDivElement>(null);
   const [showEditModal, setShowEditModal] = useState(false);
   const [editNotes, setEditNotes] = useState("");
   const [isPDFReady, setIsPDFReady] = useState(false);
+  const [showProductSearch, setShowProductSearch] = useState(false);
+  const [showProductConfig, setShowProductConfig] = useState(false);
+  const [editingRowIndex, setEditingRowIndex] = useState<number | null>(null);
+  const [pendingBaseProduct, setPendingBaseProduct] = useState<BaseProduct | null>(null);
+  const [pendingInitialQty, setPendingInitialQty] = useState<number | undefined>(undefined);
 
   // Dynamically load html2pdf.js from CDN with retry fallback
   useEffect(() => {
@@ -42,7 +61,9 @@ export default function QuotationPreview({ formData }: any) {
     };
     document.body.appendChild(script);
 
-    return () => document.body.removeChild(script);
+    return () => {
+      document.body.removeChild(script);
+    };
   }, []);
 
   const handleDownloadPDF = (attempt = 1) => {
@@ -117,15 +138,13 @@ export default function QuotationPreview({ formData }: any) {
   // Use actual order items instead of hardcoded data
   const selectedProducts: any[] = formData.products || formData.items || [];
 
-
-
-
   const productLines = selectedProducts.map((p) => {
     // Handle multiple price field names (unitPrice, unit_price, price, unitCost, cost)
-    const unitPrice = parseFloat(p.unitPrice || p.unit_price || p.price || p.unitCost || p.cost || 0);
-    const quantity = parseInt(p.quantity || 0);
+    const unitPrice = parseFloat(p.unitPrice || p.unit_price || p.price || p.unitCost || p.cost || "");
+    const quantity = parseInt(p.quantity || "");
     
     return {
+      id: p.id || Math.random().toString(),
       name: p.name || '',
       quantity: quantity,
       unitPrice: unitPrice,
@@ -133,21 +152,194 @@ export default function QuotationPreview({ formData }: any) {
     };
   });
 
-
-
-
   const productSubtotal = productLines.reduce((sum, p) => sum + p.lineTotal, 0);
   const otherSubtotal = labour + finishing + paper + machine + design + delivery + otherCharges;
   const subtotal = productSubtotal + otherSubtotal;
-  const vat = Math.round((subtotal - discount) * 0.03);
+  const vat = Math.round((subtotal - discount) * 0.05);
   const total = subtotal - discount + vat;
   const remaining = total - advancePaid;
 
+  // Create rows with empty slots
   const rows = [...productLines];
-  while (rows.length < 17) rows.push({ name: "", quantity: "", unitPrice: "", lineTotal: "" });
+  while (rows.length < 17) {
+    rows.push({ 
+      id: `empty-${rows.length}`, 
+      name: "", 
+      quantity: 0, 
+      unitPrice: 0, 
+      lineTotal: 0 
+    });
+  }
+
+  // Helper function to get the correct field value with fallbacks
+  const getFieldValue = (primary: string, fallback: string, defaultValue: string = "") => {
+    return formData[primary] || formData[fallback] || defaultValue;
+  };
+
+  // Get current logged-in user's username
+  const getCurrentUsername = () => {
+    if (typeof window !== "undefined") {
+      return localStorage.getItem("admin_username") || "Unknown User";
+    }
+    return "Unknown User";
+  };
+
+  // Product management functions
+  const handleAddProduct = (rowIndex: number) => {
+    setEditingRowIndex(rowIndex);
+    setShowProductSearch(true);
+  };
+
+  const handleEditProduct = (rowIndex: number) => {
+    if (rowIndex >= selectedProducts.length) return;
+    
+    const productToEdit = selectedProducts[rowIndex];
+    
+    // Create a BaseProduct object from the existing product
+    const baseProduct: BaseProduct = {
+      id: productToEdit.productId || productToEdit.id,
+      name: productToEdit.name,
+      imageUrl: productToEdit.imageUrl || '',
+      defaultPrice: productToEdit.unitPrice || 0
+    };
+    
+    // Save custom requirements to localStorage so modal can retrieve them
+    if (productToEdit.customRequirements) {
+      const storageKey = `orderLifecycle_customRequirements_${productToEdit.id}`;
+      localStorage.setItem(storageKey, productToEdit.customRequirements);
+    }
+    
+    setEditingRowIndex(rowIndex);
+    setPendingBaseProduct(baseProduct);
+    setPendingInitialQty(productToEdit.quantity);
+    setShowProductConfig(true);
+  };
+
+  const handleProductSelected = (product: BaseProduct, quantity: number = 1) => {
+    if (editingRowIndex === null) return;
+
+    // Set the pending product and open config modal
+    setPendingBaseProduct(product);
+    setPendingInitialQty(quantity);
+    setShowProductSearch(false);
+    setShowProductConfig(true);
+  };
+
+  const handleProductConfigured = (configured: ConfiguredProduct) => {
+    if (editingRowIndex === null) return;
+
+    const newProduct = {
+      id: configured.id,
+      name: configured.name,
+      quantity: configured.quantity,
+      unitPrice: configured.price,
+      lineTotal: configured.quantity * configured.price,
+      attributes: configured.attributes,
+      sku: configured.sku,
+      imageUrl: configured.imageUrl, // Preserve the image URL
+      customRequirements: configured.design?.customRequirements || "", // Preserve custom requirements
+    };
+
+    // Update the products array
+    const updatedProducts = [...selectedProducts];
+    if (editingRowIndex < selectedProducts.length) {
+      // Replace existing product
+      updatedProducts[editingRowIndex] = newProduct;
+    } else {
+      // Add new product
+      updatedProducts.push(newProduct);
+    }
+
+    // Update form data
+    if (onProductsChange) {
+      onProductsChange(updatedProducts);
+    }
+
+    // Reset state
+    setShowProductConfig(false);
+    setPendingBaseProduct(null);
+    setPendingInitialQty(undefined);
+    setEditingRowIndex(null);
+  };
+
+  const resetPendingProduct = () => {
+    setPendingBaseProduct(null);
+    setPendingInitialQty(undefined);
+    setEditingRowIndex(null);
+  };
+
+  const handleRemoveProduct = (rowIndex: number) => {
+    if (rowIndex >= selectedProducts.length) return;
+
+    const updatedProducts = selectedProducts.filter((_, index) => index !== rowIndex);
+    
+    if (onProductsChange) {
+      onProductsChange(updatedProducts);
+    }
+  };
+
+  const handleQuantityChange = (rowIndex: number, newQuantity: number) => {
+    if (rowIndex >= selectedProducts.length || newQuantity < 0) return;
+
+    const updatedProducts = [...selectedProducts];
+    updatedProducts[rowIndex] = {
+      ...updatedProducts[rowIndex],
+      quantity: newQuantity,
+      lineTotal: newQuantity * (updatedProducts[rowIndex].unitPrice || updatedProducts[rowIndex].unit_price || updatedProducts[rowIndex].price || 0)
+    };
+
+    if (onProductsChange) {
+      onProductsChange(updatedProducts);
+    }
+  };
+
+  const handleUnitPriceChange = (rowIndex: number, newPrice: number) => {
+    if (rowIndex >= selectedProducts.length || newPrice < 0) return;
+
+    const updatedProducts = [...selectedProducts];
+    const quantity = updatedProducts[rowIndex].quantity || "";
+    updatedProducts[rowIndex] = {
+      ...updatedProducts[rowIndex],
+      unitPrice: newPrice,
+      lineTotal: quantity * newPrice
+    };
+
+    if (onProductsChange) {
+      onProductsChange(updatedProducts);
+    }
+  };
 
   return (
     <>
+      {/* Product Search Modal */}
+      <ProductSearchModal
+        open={showProductSearch}
+        onClose={() => {
+          setShowProductSearch(false);
+          setEditingRowIndex(null);
+        }}
+        onPickBaseProduct={handleProductSelected}
+      />
+
+      {/* Product Config Modal */}
+      <ProductConfigModal
+        open={showProductConfig}
+        onClose={() => {
+          setShowProductConfig(false);
+          resetPendingProduct();
+        }}
+        baseProduct={pendingBaseProduct}
+        onConfirm={handleProductConfigured}
+        initialQty={pendingInitialQty}
+        initialAttributes={editingRowIndex !== null && editingRowIndex < selectedProducts.length ? selectedProducts[editingRowIndex].attributes : {}}
+        initialPrice={editingRowIndex !== null && editingRowIndex < selectedProducts.length ? selectedProducts[editingRowIndex].unitPrice : 0}
+        editingProductId={editingRowIndex !== null && editingRowIndex < selectedProducts.length ? selectedProducts[editingRowIndex].id : undefined}
+        onBack={() => {
+          setShowProductConfig(false);
+          setShowProductSearch(true);
+        }}
+      />
+
       {/* Edit Modal */}
       {showEditModal && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 html2pdf__ignore border-0">
@@ -206,21 +398,21 @@ export default function QuotationPreview({ formData }: any) {
           <div className="border border-gray-300">
             <div className="bg-[#891F1A] text-white px-4 py-1 font-bold text-sm">Customer</div>
             <div className="p-3 space-y-1 text-xs">
-              <p><strong>Name:</strong> {formData.clientName || "John Doe"}</p>
-              <p><strong>Company:</strong> {formData.clientCompany || "ABC Corp"}</p>
-              <p><strong>Phone:</strong> {formData.clientPhone || "+971-5xxxxxxxx"}</p> {/* NEW */}
-              <p><strong>Location:</strong> {formData.clientLocation || "Dubai"}</p>
-              <p><strong>TRN:</strong> {formData.clientTRN || "1003 62033100003"}</p>
+              <p><strong>Name:</strong> {getFieldValue("clientName", "client_name", "John Doe")}</p>
+              <p><strong>Company:</strong> {getFieldValue("companyName", "clientCompany", "ABC Corp")}</p>
+              <p><strong>Phone:</strong> {getFieldValue("phone", "clientPhone", "+971-5xxxxxxxx")}</p>
+              <p><strong>Location:</strong> {getFieldValue("clientLocation", "address", "Dubai")}</p>
+              <p><strong>TRN:</strong> {getFieldValue("trn", "trn", "1003 62033100003")}</p>
             </div>
           </div>
 
           <div className="border border-gray-300">
             <div className="bg-[#891F1A] text-white px-4 py-1 font-bold text-sm">Project Description</div>
             <div className="p-3 space-y-1 text-xs">
-              <p><strong>Project:</strong> {formData.projectDescription || "N/A"}</p>
-              <p><strong>Date:</strong> {formData.date || "2025-08-05"}</p>
-              <p><strong>Sales Person:</strong> {formData.salesPerson || "Ahmed"}</p>
-              <p><strong>Invoice:</strong> {formData.orderId || "INV-00123"}</p>
+              <p><strong>Project:</strong> {getFieldValue("projectDescription", "specifications", "N/A")}</p>
+              <p><strong>Date:</strong> {getFieldValue("date", "created_at", "2025-08-05")}</p>
+              <p><strong>Sales Person:</strong> {getFieldValue("salesPerson", "created_by", getCurrentUsername())}</p>
+              <p><strong>Invoice:</strong> {getFieldValue("orderId", "order_code", "INV-00123")}</p>
             </div>
           </div>
         </div>
@@ -238,19 +430,97 @@ export default function QuotationPreview({ formData }: any) {
               </tr>
             </thead>
             <tbody>
-              {rows.map((item, index) => (
-                <tr key={index}>
-                  <td className="border border-gray-400 px-2 py-1">{index + 1}</td>
-                  <td className="border border-gray-400 px-2 py-1">{item.name}</td>
-                  <td className="border border-gray-400 px-2 py-1 text-center">{item.quantity}</td>
-                  <td className="border border-gray-400 px-2 py-1 text-right">
-                    {typeof item.unitPrice === 'number' ? item.unitPrice.toFixed(2) : (item.unitPrice || "")}
-                  </td>
-                  <td className="border border-gray-400 px-2 py-1 text-right">
-                    {typeof item.lineTotal === 'number' ? item.lineTotal.toFixed(2) : (item.lineTotal || "")}
-                  </td>
-                </tr>
-              ))}
+              {rows.map((item, index) => {
+                const isEmpty = !item.name;
+                const isFirstEmpty = isEmpty && index === selectedProducts.length;
+                
+                return (
+                  <tr key={index} className={isEmpty ? "bg-gray-50" : ""}>
+                    <td className="border border-gray-400 px-2 py-1 relative">
+                      <div className="flex items-center justify-between">
+                        <span>{index + 1}</span>
+                        {isEditable && isFirstEmpty && (
+                          <button
+                            onClick={() => handleAddProduct(index)}
+                            className="w-4 h-4 bg-green-500 text-white rounded-full flex items-center justify-center text-xs hover:bg-green-600 html2pdf__ignore ml-1"
+                            title="Add Product"
+                          >
+                            <Plus className="w-3 h-3" />
+                          </button>
+                        )}
+                      </div>
+                    </td>
+                    <td className="border border-gray-400 px-2 py-1">
+                      {isEditable && !isEmpty ? (
+                        <div className="flex items-center gap-2">
+                          <button
+                            onClick={() => handleEditProduct(index)}
+                            className="flex-1 text-left hover:underline cursor-pointer"
+                            title="Click to edit product"
+                          >
+                            {item.name}
+                          </button>
+                          <button
+                            onClick={() => handleRemoveProduct(index)}
+                            className="w-4 h-4 bg-red-500 text-white rounded-full flex items-center justify-center text-xs hover:bg-red-600 html2pdf__ignore"
+                            title="Remove Product"
+                          >
+                            <X className="w-3 h-3" />
+                          </button>
+                        </div>
+                      ) : (
+                        item.name
+                      )}
+                    </td>
+                    <td className="border border-gray-400 px-2 py-1 text-center">
+                      {isEditable && !isEmpty ? (
+                        <div className="flex items-center justify-center gap-1">
+                          <button
+                            onClick={() => handleQuantityChange(index, (item.quantity as number) - 1)}
+                            className="w-5 h-5 bg-gray-200 text-gray-700 rounded flex items-center justify-center text-xs hover:bg-gray-300 html2pdf__ignore"
+                            title="Decrease Quantity"
+                          >
+                            <Minus className="w-3 h-3" />
+                          </button>
+                          <input
+                            type="number"
+                            value={item.quantity}
+                            onChange={(e) => handleQuantityChange(index, parseInt(e.target.value) || 0)}
+                            className="w-12 text-center border border-gray-300 rounded px-1 py-0.5 text-xs html2pdf__ignore"
+                            min="0"
+                          />
+                          <button
+                            onClick={() => handleQuantityChange(index, (item.quantity as number) + 1)}
+                            className="w-5 h-5 bg-gray-200 text-gray-700 rounded flex items-center justify-center text-xs hover:bg-gray-300 html2pdf__ignore"
+                            title="Increase Quantity"
+                          >
+                            <Plus className="w-3 h-3" />
+                          </button>
+                        </div>
+                      ) : (
+                        isEmpty ? "" : item.quantity
+                      )}
+                    </td>
+                    <td className="border border-gray-400 px-2 py-1 text-right">
+                      {isEditable && !isEmpty ? (
+                        <input
+                          type="number"
+                          value={typeof item.unitPrice === 'number' ? item.unitPrice.toFixed(2) : item.unitPrice}
+                          onChange={(e) => handleUnitPriceChange(index, parseFloat(e.target.value) || 0)}
+                          className="w-20 text-right border border-gray-300 rounded px-1 py-0.5 text-xs html2pdf__ignore"
+                          min="0"
+                          step="0.01"
+                        />
+                      ) : (
+                        isEmpty ? "" : (typeof item.unitPrice === 'number' ? item.unitPrice.toFixed(2) : (item.unitPrice || ""))
+                      )}
+                    </td>
+                    <td className="border border-gray-400 px-2 py-1 text-right">
+                      {isEmpty ? "" : (typeof item.lineTotal === 'number' ? item.lineTotal.toFixed(2) : (item.lineTotal || ""))}
+                    </td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         </div>
@@ -278,7 +548,7 @@ export default function QuotationPreview({ formData }: any) {
                 {[
                   { label: "Subtotal", value: subtotal, border: true },
                   { label: "Discount", value: discount, border: true },
-                  { label: "VAT 3%", value: vat, border: true },
+                  { label: "VAT 5%", value: vat, border: true },
                   { label: "Advance Paid", value: advancePaid, border: true },
                   { label: "Total", value: total, rowClass: "bg-[#891F1A] text-white font-bold" },
                   { label: "Remaining", value: remaining, rowClass: "font-semibold" },
@@ -324,7 +594,7 @@ export default function QuotationPreview({ formData }: any) {
 
           <button
             className="bg-gray-800 hover:bg-black text-white px-4 py-2 rounded shadow transition"
-            onClick={handleDownloadPDF}
+            onClick={() => handleDownloadPDF()}
           >
             Download PDF Preview
           </button>

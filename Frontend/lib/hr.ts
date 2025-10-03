@@ -1,4 +1,4 @@
-import { get } from "./api";
+import { api } from "./api";
 
 export interface HREmployeeOption {
   id: number;
@@ -12,7 +12,7 @@ export interface HREmployeeOption {
 
 export const hrApi = {
   async getEmployees(): Promise<HREmployeeOption[]> {
-    const res = await get<any>("/api/hr/employees");
+    const res = await api.get<any>("/api/hr/employees");
     // backend returns array directly
     return Array.isArray(res) ? res : (res?.employees ?? []);
   },

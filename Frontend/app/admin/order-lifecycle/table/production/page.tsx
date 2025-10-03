@@ -1,579 +1,798 @@
 "use client";
 
-import { useMemo, useState, useCallback, Fragment, useRef } from "react";
+import { useMemo, useState, useCallback, Fragment, useEffect } from "react";
 import { Dialog, Transition } from "@headlessui/react";
 import DashboardNavbar from "@/app/components/navbar/DashboardNavbar";
+import { Button } from "@/app/components/Button";
+import { toast, Toaster } from "react-hot-toast";
+import { ordersApi, Order } from "@/lib/orders-api";
+import { assignMachines, getMachineQueue, getOrderFiles } from "@/lib/workflowApi";
+import { CheckCircle, Settings, Package, Clock, X, FileText, Play, Pause } from "lucide-react";
 
-/* ============================================================================
-   Types (local, no external store)
-============================================================================ */
-
+/* Types */
 type Urgency = "Urgent" | "High" | "Normal" | "Low";
-type Status = "New" | "Active" | "Completed";
 
-type Row = {
-  id: string;
+interface Row {
+  id: number;
+  orderCode: string;
   title: string;
-  date: string; // YYYY-MM-DD
-  time: string; // HH:MM
+  date: string;
+  time: string;
   urgency: Urgency;
-  status: Status;
-};
-
-type Machine = { id: string; name: string; eta: string };
-type QueueItem = { id: string; title: string; status: "Queued" | "In Progress" | "Complete" };
-
-type UploadMeta = { name: string; size: number; type: string };
-
-type SharedFormData = {
-  orderId?: string;
-  designerUploads?: Record<string, Array<{
-    id: string;
-    name: string;
-    size: number;
-    type: string;
-    ext?: string;
-    isImage?: boolean;
-    url?: string;
-    previewUrl?: string;
-  }>>;
-  intakeProductsMap?: Record<string, Array<{ name: string; qty: number }>>;
-  orderInformationMap?: Record<string, Array<{ product: string; spec: string }>>;
-  sendTo?: "Sales" | "Designer" | "Production";
-};
-
-type QueueByMachine = Record<string, QueueItem[]>;
-
-/* ============================================================================
-   Demo Data (replace with your API)
-============================================================================ */
-
-const DATA: Row[] = [
-  { id: "PROD-201", title: "Flyer Print Batch A", date: "2025-08-05", time: "09:00", urgency: "Urgent", status: "New" },
-  { id: "PROD-202", title: "Roll-up Banner Printing", date: "2025-08-05", time: "13:20", urgency: "High", status: "Active" },
-  { id: "PROD-203", title: "Sticker Sheet Batch", date: "2025-08-04", time: "15:10", urgency: "Normal", status: "Active" },
-  { id: "PROD-204", title: "Business Cards – Matte", date: "2025-08-02", time: "11:45", urgency: "Low", status: "Completed" },
-];
-
-const MACHINES: Machine[] = [
-  { id: "m1", name: "Laser Cutter", eta: "~45m" },
-  { id: "m2", name: "Printer", eta: "~30m" },
-  { id: "m3", name: "UV Flatbed", eta: "~1h" },
-  { id: "m4", name: "Plotter", eta: "~20m" },
-];
-
-const QUEUE: QueueByMachine = {
-  "Laser Cutter": [
-    { id: "Q-101", title: "Acrylic Sign", status: "Queued" },
-    { id: "Q-102", title: "Wood Plaque", status: "In Progress" },
-  ],
-  Printer: [
-    { id: "Q-201", title: "Business Cards", status: "Complete" },
-    { id: "Q-202", title: "Flyers", status: "Queued" },
-    { id: "Q-203", title: "Stickers", status: "In Progress" },
-    { id: "Q-204", title: "Booklets", status: "Queued" },
-  ],
-};
-
-/* ============================================================================
-   UI helpers
-============================================================================ */
-
-const urgencyBadge = (u: Urgency) => {
-  const classes: Record<Urgency, string> = {
-    Urgent: "bg-red-100 text-red-700 border-red-200",
-    High: "bg-amber-100 text-amber-800 border-amber-200",
-    Normal: "bg-emerald-100 text-emerald-700 border-emerald-200",
-    Low: "bg-zinc-100 text-zinc-700 border-zinc-200",
-  };
-  return <span className={`inline-block rounded-full px-2.5 py-1 text-xs border font-medium ${classes[u]}`}>{u}</span>;
-};
-
-const statusBadge = (s: QueueItem["status"]) => {
-  const map: Record<QueueItem["status"], string> = {
-    Queued: "bg-amber-100 text-amber-800",
-    "In Progress": "bg-blue-100 text-blue-700",
-    Complete: "bg-emerald-100 text-emerald-700",
-  };
-  return <span className={`text-xs px-2.5 py-1 rounded-full ${map[s]}`}>{s}</span>;
-};
-
-const etaBadge = (eta: string) => (
-  <span className="text-xs px-2.5 py-1 rounded-full bg-gray-100 text-gray-700">{eta}</span>
-);
-
-const normalizeToYMD = (s: string) => (/^\d{4}-\d{2}-\d{2}$/.test(s) ? s : new Date(s).toISOString().slice(0, 10));
-
-const formatBytes = (bytes?: number) => {
-  if (bytes === undefined || bytes === null) return "";
-  if (bytes === 0) return "0 B";
-  const sizes = ["B", "KB", "MB", "GB"];
-  const i = Math.floor(Math.log(bytes) / Math.log(1024));
-  return `${(bytes / Math.pow(1024, i)).toFixed(i ? 1 : 0)} ${sizes[i]}`;
-};
-
-/* ============================================================================
-   Shared tables
-============================================================================ */
-
-function IntakeProductsTable({
-  items,
-  title = "Products (Order Intake)",
-}: {
-  items: Array<{ name: string; qty: number }>;
-  title?: string;
-}) {
-  return (
-    <div className="rounded-2xl border border-black bg-white shadow-sm overflow-hidden">
-      <div className="px-4 py-3 bg-gray-100 border-b border-black">
-        <h3 className="text-sm font-semibold text-gray-900">{title}</h3>
-      </div>
-
-      {items?.length ? (
-        <table className="w-full text-sm">
-          <thead>
-            <tr>
-              <th className="text-left px-6 py-2 border-b border-black w-[70%]">Name</th>
-              <th className="text-right px-6 py-2 border-b border-black w-[30%]">Quantity</th>
-            </tr>
-          </thead>
-          <tbody>
-            {items.map((p, i) => (
-              <tr key={`${p.name}-${i}`} className="odd:bg-white even:bg-gray-50">
-                <td className="px-6 py-2 border-b border-gray-200 text-gray-900 truncate">{p.name}</td>
-                <td className="px-6 py-2 border-b border-gray-200 text-right font-extrabold tabular-nums">{p.qty}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      ) : (
-        <div className="px-6 py-3 text-sm text-gray-500">No products captured from Order Intake.</div>
-      )}
-    </div>
-  );
+  status: string;
+  stage: string;
+  clientName: string;
+  items: any[];
+  machineAssignments?: any[];
 }
 
-function OrderInformationTable({
-  items,
-  title = "Order Information",
-}: {
-  items: Array<{ product: string; spec: string }>;
-  title?: string;
-}) {
-  return (
-    <div className="rounded-2xl border border-black bg-white shadow-sm overflow-hidden">
-      <div className="px-4 py-3 bg-gray-100 border-b border-black">
-        <h3 className="text-sm font-semibold text-gray-900">{title}</h3>
-      </div>
-
-      {items?.length ? (
-        <table className="w-full text-sm">
-          <thead>
-            <tr>
-              <th className="text-left px-6 py-2 border-b border-black w-[40%]">Product</th>
-              <th className="text-left px-6 py-2 border-b border-black w-[60%]">Specification</th>
-            </tr>
-          </thead>
-          <tbody>
-            {items.map((row, i) => (
-              <tr key={`${row.product}-${i}`} className="odd:bg-white even:bg-gray-50">
-                <td className="px-6 py-2 border-b border-gray-200 text-gray-900 truncate">{row.product}</td>
-                <td className="px-6 py-2 border-b border-gray-200 text-gray-700">{row.spec?.trim() ? row.spec : "—"}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      ) : (
-        <div className="px-6 py-3 text-sm text-gray-500">No order information added.</div>
-      )}
-    </div>
-  );
+interface ProductMachineAssignment {
+  productId: number;
+  productName: string;
+  productSku: string;
+  productQuantity: number;
+  machineId: string;
+  machineName: string;
+  estimatedTimeMinutes: number;
 }
 
-/* ============================================================================
-   Component
-============================================================================ */
+const AVAILABLE_MACHINES = [
+  { id: "laser-01", name: "Laser Cutter 1", type: "laser" },
+  { id: "laser-02", name: "Laser Cutter 2", type: "laser" },
+  { id: "printer-01", name: "Digital Printer 1", type: "printer" },
+  { id: "printer-02", name: "Digital Printer 2", type: "printer" },
+  { id: "uv-01", name: "UV Flatbed Printer", type: "uv" },
+  { id: "plotter-01", name: "Vinyl Plotter", type: "plotter" },
+  { id: "cutter-01", name: "Guillotine Cutter", type: "cutter" },
+  { id: "laminator-01", name: "Hot Laminator", type: "laminator" },
+];
 
-export default function ProductionOrdersTablePage() {
-  const [monthFilter, setMonthFilter] = useState<"All" | "2025-08" | "2025-07">("All");
-  const [q, setQ] = useState("");
+export default function ProductionDashboard() {
+  const [rows, setRows] = useState<Row[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [selectedOrder, setSelectedOrder] = useState<Row | null>(null);
+  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [productAssignments, setProductAssignments] = useState<Record<string, { machineId: string; estimatedTime: number }>>({});
+  const [designFiles, setDesignFiles] = useState<any[]>([]);
+  const [filesLoading, setFilesLoading] = useState(false);
+  const [assigning, setAssigning] = useState(false);
+  const [confirming, setConfirming] = useState(false);
 
-  // modal state
-  const [isOpen, setIsOpen] = useState(false);
-  const [selected, setSelected] = useState<Row | null>(null);
-
-  // Local replacement for store-backed form data
-  const [formData, setFormData] = useState<SharedFormData>({});
-
-  // Machines
-  const [machineOpen, setMachineOpen] = useState(false);
-  const [machineSelections, setMachineSelections] = useState<Record<string, boolean>>({});
-  const [machineSearch, setMachineSearch] = useState("");
-
-  const filteredMachines = useMemo(() => {
-    const term = machineSearch.trim().toLowerCase();
-    if (!term) return MACHINES;
-    return MACHINES.filter((m) => m.name.toLowerCase().includes(term));
-  }, [machineSearch]);
-
-  const assignedMachines = useMemo(() => MACHINES.filter((m) => !!machineSelections[m.id]), [machineSelections]);
-
-  const toggleMachine = (id: string) => setMachineSelections((m) => ({ ...m, [id]: !m[id] }));
-  const clearAllMachines = () => setMachineSelections({});
-  const selectAllMachines = () => {
-    const next: Record<string, boolean> = {};
-    MACHINES.forEach((m) => (next[m.id] = true));
-    setMachineSelections(next);
+  // Helper function to get auth headers
+  const getAuthHeaders = () => {
+    const token = localStorage.getItem('admin_token');
+    return {
+      'Authorization': `Bearer ${token}`,
+      'Content-Type': 'application/json',
+    };
   };
-  const removeOneMachine = (id: string) => setMachineSelections(({ [id]: _, ...rest }) => rest);
 
-  const openForRow = useCallback((row: Row) => {
-    setSelected(row);
-    setIsOpen(true);
+  // Enhanced production orders fetching with better filtering
+  const fetchOrders = useCallback(async () => {
+    try {
+      setLoading(true);
+      console.log('🎯 Fetching production orders...');
+      
+      // Use existing working orders endpoint with enhanced filtering
+      const apiOrders = await ordersApi.getOrders();
+      
+      // Enhanced filtering for production orders with better logic
+      const productionOrders = apiOrders.filter((order: Order) => {
+        const statusMatch = order.status === 'sent_to_production' || 
+                           order.status === 'getting_ready' || 
+                           order.status === 'active' ||
+                           order.status === 'sent_to_admin' ||
+                           order.status === 'sent_for_delivery';
+        
+        const stageMatch = order.stage === 'printing' || 
+                          order.stage === 'approval' || 
+                          order.stage === 'delivery';
+        
+        return statusMatch || stageMatch;
+      });
+
+      console.log(`📊 Found ${productionOrders.length} production orders out of ${apiOrders.length} total orders`);
+      
+      // Debug: Log sample order data
+      if (productionOrders.length > 0) {
+        console.log('🔍 Sample production order:', {
+          id: productionOrders[0].id,
+          order_code: productionOrders[0].order_code,
+          status: productionOrders[0].status,
+          stage: productionOrders[0].stage,
+          machine_assignments: productionOrders[0].machine_assignments?.length || 0
+        });
+      }
+
+      const formattedRows: Row[] = productionOrders.map((order: Order) => ({
+        id: order.id,
+        orderCode: order.order_code,
+        title: `${order.client_name} - ${order.order_code}`,
+        date: new Date(order.created_at).toLocaleDateString(),
+        time: new Date(order.created_at).toLocaleTimeString(),
+        urgency: (order.urgency || 'Normal') as Urgency,
+        status: order.status,
+        stage: order.stage,
+        clientName: order.client_name,
+        items: order.items || [],
+        machineAssignments: order.machine_assignments || [],
+      }));
+
+      setRows(formattedRows);
+      
+      // Debug: Log filtered categories
+      console.log('📋 Category breakdown:', {
+        newOrders: formattedRows.filter(row => 
+          (row.status === 'sent_to_production' || row.status === 'active') && 
+          row.stage === 'printing' && 
+          (!row.machineAssignments || row.machineAssignments.length === 0)
+        ).length,
+        inProgressOrders: formattedRows.filter(row => 
+          (row.status === 'sent_to_production' || row.status === 'active') && 
+          row.stage === 'printing' && 
+          row.machineAssignments && row.machineAssignments.length > 0
+        ).length,
+        completedOrders: formattedRows.filter(row => 
+          row.status === 'getting_ready' || 
+          row.status === 'sent_to_admin' || 
+          row.status === 'sent_for_delivery' ||
+          row.stage === 'approval' ||
+          row.stage === 'delivery'
+        ).length
+      });
+      
+      // Show enhanced success message
+      toast.success(`🎯 Loaded ${productionOrders.length} orders in production queue`, {
+        icon: '🏭',
+        duration: 4000,
+      });
+      
+    } catch (error) {
+      console.error('Failed to fetch production orders:', error);
+      toast.error(`Failed to load production orders: ${error.message}`, {
+        icon: '❌'
+      });
+    } finally {
+      setLoading(false);
+    }
   }, []);
 
-  const filtered = useMemo(() => {
-    return DATA.filter((r) => {
-      const okMonth = monthFilter === "All" ? true : r.date.startsWith(monthFilter);
-      const hay = [r.id, r.title, r.date, r.time, r.urgency].join(" ").toLowerCase();
-      const okQuery = q.trim() === "" ? true : hay.includes(q.toLowerCase());
-      return okMonth && okQuery;
+  useEffect(() => {
+    fetchOrders();
+  }, [fetchOrders]);
+
+  // Listen for real-time order updates
+  useEffect(() => {
+    const handleOrderUpdate = (event: CustomEvent) => {
+      const { orderId, orderCode, status, stage } = event.detail;
+      console.log('📨 Order update received:', { orderId, orderCode, status, stage });
+      
+      // Check if this is a new production order
+      if ((status === 'sent_to_production' || status === 'active') && stage === 'printing') {
+        console.log('🎯 New order sent to production, refreshing queue...');
+        // Refresh orders when new order sent to production
+        fetchOrders();
+        
+        // Show notification
+        toast.success(`🎯 New order ${orderCode} added to production queue!`, {
+          duration: 6000,
+          icon: '🎉'
+        });
+      }
+    };
+    
+    // Listen for order status changes
+    window.addEventListener('order-sent-to-production', handleOrderUpdate as EventListener);
+    
+    return () => {
+      window.removeEventListener('order-sent-to-production', handleOrderUpdate as EventListener);
+    };
+  }, [fetchOrders]);
+
+  // Fetch design files for selected order
+  const fetchDesignFiles = useCallback(async (orderId: number) => {
+    try {
+      setFilesLoading(true);
+      const files = await getOrderFiles(orderId);
+      setDesignFiles(files);
+    } catch (error) {
+      console.error('Failed to fetch design files:', error);
+      toast.error('Failed to load design files');
+      setDesignFiles([]);
+    } finally {
+      setFilesLoading(false);
+    }
+  }, []);
+
+  // Handle order selection
+  const handleOrderClick = useCallback((row: Row) => {
+    setSelectedOrder(row);
+    setIsModalOpen(true);
+    setProductAssignments({});
+    
+    // Pre-populate existing assignments
+    if (row.machineAssignments && row.machineAssignments.length > 0) {
+      const existingAssignments: Record<string, { machineId: string; estimatedTime: number }> = {};
+      row.machineAssignments.forEach((assignment: any) => {
+        const key = `${assignment.product_name}_${assignment.product_sku || ''}`;
+        existingAssignments[key] = {
+          machineId: assignment.machine_id,
+          estimatedTime: assignment.estimated_time_minutes || 60,
+        };
+      });
+      setProductAssignments(existingAssignments);
+    }
+    
+    fetchDesignFiles(row.id);
+  }, [fetchDesignFiles]);
+
+  // Handle machine assignment change
+  const handleMachineChange = useCallback((productKey: string, machineId: string) => {
+    setProductAssignments(prev => ({
+      ...prev,
+      [productKey]: {
+        ...prev[productKey],
+        machineId,
+        estimatedTime: prev[productKey]?.estimatedTime || 60,
+      },
+    }));
+  }, []);
+
+  // Handle time change
+  const handleTimeChange = useCallback((productKey: string, time: number) => {
+    setProductAssignments(prev => ({
+      ...prev,
+      [productKey]: {
+        ...prev[productKey],
+        estimatedTime: time,
+      },
+    }));
+  }, []);
+
+  // Validate all products have machines assigned
+  const validateAssignments = useCallback((order: Row) => {
+    if (!order.items || order.items.length === 0) return true;
+    
+    return order.items.every(item => {
+      const key = `${item.name}_${item.sku || ''}`;
+      const assignment = productAssignments[key];
+      return assignment && assignment.machineId && assignment.estimatedTime > 0;
     });
-  }, [monthFilter, q]);
+  }, [productAssignments]);
 
-  const by = (s: Status) => filtered.filter((r) => r.status === s);
+  // Handle machine assignment save
+  const handleAssignMachines = useCallback(async () => {
+    if (!selectedOrder) return;
 
-  // Designer uploads (read from local formData mirror)
-  const uploadedFromDesigner = useMemo(() => {
-    const du = formData?.designerUploads || {};
-    const selectedKey = selected?.id;
-    const lastDesignerOrder = formData?.orderId;
-    if (selectedKey && du[selectedKey]) return du[selectedKey];
-    if (lastDesignerOrder && du[lastDesignerOrder]) return du[lastDesignerOrder];
-    const firstKey = Object.keys(du)[0];
-    return firstKey ? du[firstKey] : [];
-  }, [formData, selected]);
+    try {
+      setAssigning(true);
+      
+      const assignments: ProductMachineAssignment[] = selectedOrder.items.map(item => {
+        const key = `${item.name}_${item.sku || ''}`;
+        const assignment = productAssignments[key];
+        const machine = AVAILABLE_MACHINES.find(m => m.id === assignment.machineId);
+        
+        return {
+          productId: item.id,
+          productName: item.name,
+          productSku: item.sku || '',
+          productQuantity: item.quantity || 1,
+          machineId: assignment.machineId,
+          machineName: machine?.name || 'Unknown Machine',
+          estimatedTimeMinutes: assignment.estimatedTime,
+        };
+      });
 
-  // Intake + order info for the selected order
-  const intakeProducts: Array<{ name: string; qty: number }> = useMemo(() => {
-    if (!selected) return [];
-    return formData?.intakeProductsMap?.[selected.id] || [];
-  }, [formData, selected]);
+      const assignmentsWithUser = assignments.map(assignment => ({
+        product_name: assignment.productName,
+        product_sku: assignment.productSku,
+        product_quantity: assignment.productQuantity,
+        machine_id: assignment.machineId,
+        machine_name: assignment.machineName,
+        estimated_time_minutes: assignment.estimatedTimeMinutes,
+        assigned_by: localStorage.getItem('admin_username') || 'production_user',
+        notes: '',
+      }));
 
-  const orderInformation: Array<{ product: string; spec: string }> = useMemo(() => {
-    if (!selected) return [];
-    const map = formData?.orderInformationMap?.[selected.id];
-    if (Array.isArray(map) && map.length) return map;
-    return (intakeProducts || []).map((p) => ({ product: p.name, spec: "" }));
-  }, [formData, selected, intakeProducts]);
+      await assignMachines(selectedOrder.id, assignmentsWithUser);
 
-  const Section = ({ title, rows }: { title: string; rows: Row[] }) => (
-    <section className="rounded-xl border bg-white shadow-sm overflow-hidden">
-      <div className="px-4 py-4">
-        <h2 className="text-2xl font-bold text-[#891F1A]">{title}</h2>
-      </div>
+      toast.success('Machine assignments saved successfully!');
+      await fetchOrders(); // Refresh orders
+    } catch (error) {
+      console.error('Failed to assign machines:', error);
+      toast.error('Failed to save machine assignments');
+    } finally {
+      setAssigning(false);
+    }
+  }, [selectedOrder, productAssignments, fetchOrders]);
 
-      <div className="overflow-x-auto">
-        <table className="min-w-full text-sm">
-          <thead>
-            <tr className="bg-[#7a1b17] text-white">
-              <th className="px-3 py-3 text-center w-20">Sr No</th>
-              <th className="px-3 py-3 text-center w-36">Order Id</th>
-              <th className="px-3 py-3 text-center">Order</th>
-              <th className="px-3 py-3 text-center w-36">Date</th>
-              <th className="px-3 py-3 text-center w-28">Time</th>
-              <th className="px-3 py-3 text-center w-40">Urgency</th>
-            </tr>
-          </thead>
-          <tbody>
-            {rows.length === 0 ? (
-              <tr>
-                <td className="px-3 py-6 text-center text-gray-400" colSpan={6}>
-                  No records
-                </td>
-              </tr>
-            ) : (
-              rows.map((r, i) => (
-                <tr
-                  key={r.id}
-                  className="border-b hover:bg-gray-50 cursor-pointer"
-                  onClick={() => openForRow(r)}
-                  role="button"
-                  tabIndex={0}
-                  onKeyDown={(e) => (e.key === "Enter" || e.key === " ") && openForRow(r)}
-                >
-                  <td className="px-3 py-3 text-center">{i + 1}</td>
-                  <td className="px-3 py-3 text-center font-medium text-gray-900">{r.id}</td>
-                  <td className="px-3 py-3 text-center">
-                    <div className="font-medium text-gray-900">{r.title}</div>
-                  </td>
-                  <td className="px-3 py-3 text-center">{r.date}</td>
-                  <td className="px-3 py-3 text-center">{r.time}</td>
-                  <td className="px-3 py-3 text-center">{urgencyBadge(r.urgency)}</td>
-                </tr>
-              ))
-            )}
-          </tbody>
-        </table>
-      </div>
-    </section>
+  // Handle order confirmation
+  const handleConfirmOrder = useCallback(async () => {
+    if (!selectedOrder) return;
+
+    // Validate all products have machines
+    if (!validateAssignments(selectedOrder)) {
+      toast.error('Please assign machines to all products before confirming');
+      return;
+    }
+
+    try {
+      setConfirming(true);
+      
+      // First save assignments if not already saved
+      await handleAssignMachines();
+      
+      // Then update order status
+      await ordersApi.updateOrder(selectedOrder.id, {
+        stage: 'printing',
+        status: 'getting_ready',
+      });
+
+      toast.success('Order confirmed and sent to admin!');
+      setIsModalOpen(false);
+      await fetchOrders(); // Refresh orders
+    } catch (error) {
+      console.error('Failed to confirm order:', error);
+      toast.error('Failed to confirm order');
+    } finally {
+      setConfirming(false);
+    }
+  }, [selectedOrder, validateAssignments, handleAssignMachines, fetchOrders]);
+
+  // Filter orders by category
+  const newOrders = useMemo(() => 
+    rows.filter(row => 
+      (row.status === 'sent_to_production' || row.status === 'active') && 
+      row.stage === 'printing' && 
+      (!row.machineAssignments || row.machineAssignments.length === 0)
+    ),
+    [rows]
   );
 
-  const ref = useRef<HTMLDivElement | null>(null);
+  const inProgressOrders = useMemo(() => 
+    rows.filter(row => 
+      (row.status === 'sent_to_production' || row.status === 'active') && 
+      row.stage === 'printing' && 
+      row.machineAssignments && row.machineAssignments.length > 0
+    ),
+    [rows]
+  );
+
+  const completedOrders = useMemo(() => 
+    rows.filter(row => 
+      row.status === 'getting_ready' || 
+      row.status === 'sent_to_admin' || 
+      row.status === 'sent_for_delivery' ||
+      row.stage === 'approval' ||
+      row.stage === 'delivery'
+    ),
+    [rows]
+  );
+
+  // Get urgency color
+  const getUrgencyColor = (urgency: Urgency) => {
+    switch (urgency) {
+      case 'Urgent': return 'bg-red-100 text-red-800';
+      case 'High': return 'bg-orange-100 text-orange-800';
+      case 'Normal': return 'bg-blue-100 text-blue-800';
+      case 'Low': return 'bg-gray-100 text-gray-800';
+      default: return 'bg-gray-100 text-gray-800';
+    }
+  };
+
+  // Get status color
+  const getStatusColor = (status: string) => {
+    switch (status) {
+      case 'sent_to_production': return 'bg-yellow-100 text-yellow-800';
+      case 'active': return 'bg-blue-100 text-blue-800';
+      case 'getting_ready': return 'bg-green-100 text-green-800';
+      case 'sent_to_admin': return 'bg-purple-100 text-purple-800';
+      case 'sent_for_delivery': return 'bg-indigo-100 text-indigo-800';
+      default: return 'bg-gray-100 text-gray-800';
+    }
+  };
+
+  // Format file size
+  const formatFileSize = (bytes: number) => {
+    if (bytes === 0) return '0 Bytes';
+    const k = 1024;
+    const sizes = ['Bytes', 'KB', 'MB', 'GB'];
+    const i = Math.floor(Math.log(bytes) / Math.log(k));
+    return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+  };
 
   return (
-    <div className="min-h-screen bg-gray-100 p-4 sm:p-6 md:p-8 lg:p-10 xl:p-12 text-black">
+    <div className="min-h-screen bg-gray-50">
       <DashboardNavbar />
-      <div className="h-4 sm:h-5 md:h-6" />
+      <Toaster position="top-right" />
+      
+      <div className="p-6">
+        <div className="mb-6">
+          <h1 className="text-2xl font-bold text-gray-900">Production Dashboard</h1>
+          <p className="text-gray-600">Manage production orders and machine assignments</p>
+        </div>
 
-      <div className="max-w-7xl mx-auto pb-16">
-        <div className="flex items-center justify-between mt-2">
-          <div className="flex items-center gap-3">
-            <h1 className="text-4xl font-bold text-[#891F1A]">Production Orders</h1>
+        {loading ? (
+          <div className="flex justify-center items-center h-64">
+            <div className="text-lg text-gray-600">Loading orders...</div>
           </div>
+        ) : (
+          <div className="space-y-6">
+            {/* New Orders */}
+            <div className="bg-white rounded-lg shadow">
+              <div className="p-4 border-b border-gray-200">
+                <h2 className="text-lg font-semibold text-gray-900">
+                  New Orders ({newOrders.length})
+                </h2>
+                <p className="text-sm text-gray-600">Orders from designers requiring machine assignment</p>
+              </div>
+              <div className="p-4">
+                {newOrders.length === 0 ? (
+                  <div className="text-center py-8 text-gray-500">
+                    No new orders from designers yet.
+                  </div>
+                ) : (
+                  <div className="grid gap-4">
+                    {newOrders.map((row) => (
+                      <div
+                        key={row.id}
+                        onClick={() => handleOrderClick(row)}
+                        className="p-4 border border-gray-200 rounded-lg hover:bg-gray-50 cursor-pointer transition-colors"
+                      >
+                        <div className="flex justify-between items-start">
+                          <div className="flex-1">
+                            <div className="flex items-center gap-2 mb-2">
+                              <h3 className="font-medium text-gray-900">{row.title}</h3>
+                              <span className={`px-2 py-1 text-xs font-medium rounded-full ${getUrgencyColor(row.urgency)}`}>
+                                {row.urgency}
+                              </span>
+                              <span className={`px-2 py-1 text-xs font-medium rounded-full ${getStatusColor(row.status)}`}>
+                                {row.status.replace('_', ' ')}
+                              </span>
+                            </div>
+                            <p className="text-sm text-gray-600 mb-2">
+                              {row.clientName} • {row.items.length} product(s)
+                            </p>
+                            <p className="text-xs text-gray-500">
+                              {row.date} at {row.time}
+                            </p>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <Settings className="w-5 h-5 text-gray-400" />
+                            <span className="text-sm text-gray-500">Click to assign machines</span>
         </div>
-
-        <div className="mt-4 flex flex-col md:flex-row gap-3">
-          <select
-            aria-label="Months"
-            value={monthFilter}
-            onChange={(e) => setMonthFilter(e.target.value as any)}
-            className="px-3 py-2 rounded border bg-white"
-          >
-            <option value="All">All Months</option>
-            <option value="2025-08">Aug 2025</option>
-            <option value="2025-07">Jul 2025</option>
-          </select>
-        </div>
-
-        <div className="mt-6 grid grid-cols-1 gap-6">
-          <Section title="New Orders" rows={by("New")} />
-          <Section title="Active Orders" rows={by("Active")} />
-          <Section title="Completed Orders" rows={by("Completed")} />
         </div>
       </div>
+                    ))}
+                  </div>
+                      )}
+                    </div>
+                  </div>
 
-      {/* Popup */}
-      <Transition show={isOpen} as={Fragment}>
-        <Dialog onClose={() => setIsOpen(false)} className="relative z-50">
-          <Transition.Child as={Fragment} enter="ease-out duration-200" enterFrom="opacity-0" enterTo="opacity-100" leave="ease-in duration-150" leaveFrom="opacity-100" leaveTo="opacity-0">
-            <div className="fixed inset-0 bg-black/30 backdrop-blur-[1px]" />
+            {/* In Progress Orders */}
+            <div className="bg-white rounded-lg shadow">
+              <div className="p-4 border-b border-gray-200">
+                <h2 className="text-lg font-semibold text-gray-900">
+                  In Progress ({inProgressOrders.length})
+                </h2>
+                <p className="text-sm text-gray-600">Orders with machine assignments being worked on</p>
+                          </div>
+                          <div className="p-4">
+                {inProgressOrders.length === 0 ? (
+                  <div className="text-center py-8 text-gray-500">
+                    No orders in progress.
+                  </div>
+                ) : (
+                  <div className="grid gap-4">
+                    {inProgressOrders.map((row) => (
+                      <div
+                        key={row.id}
+                        onClick={() => handleOrderClick(row)}
+                        className="p-4 border border-gray-200 rounded-lg hover:bg-gray-50 cursor-pointer transition-colors"
+                      >
+                        <div className="flex justify-between items-start">
+                          <div className="flex-1">
+                            <div className="flex items-center gap-2 mb-2">
+                              <h3 className="font-medium text-gray-900">{row.title}</h3>
+                              <span className={`px-2 py-1 text-xs font-medium rounded-full ${getUrgencyColor(row.urgency)}`}>
+                                {row.urgency}
+                              </span>
+                              <span className={`px-2 py-1 text-xs font-medium rounded-full ${getStatusColor(row.status)}`}>
+                                {row.status.replace('_', ' ')}
+                              </span>
+                            </div>
+                            <p className="text-sm text-gray-600 mb-2">
+                              {row.clientName} • {row.items.length} product(s) • {row.machineAssignments?.length || 0} machine(s) assigned
+                            </p>
+                            <p className="text-xs text-gray-500">
+                              {row.date} at {row.time}
+                            </p>
+                                  </div>
+                          <div className="flex items-center gap-2">
+                            <Play className="w-5 h-5 text-green-500" />
+                            <span className="text-sm text-gray-500">In production</span>
+                                  </div>
+                                </div>
+                            </div>
+                    ))}
+                              </div>
+                            )}
+                          </div>
+                        </div>
+
+            {/* Completed Orders */}
+            <div className="bg-white rounded-lg shadow">
+              <div className="p-4 border-b border-gray-200">
+                <h2 className="text-lg font-semibold text-gray-900">
+                  Completed ({completedOrders.length})
+                </h2>
+                <p className="text-sm text-gray-600">Orders ready for delivery</p>
+                          </div>
+                          <div className="p-4">
+                {completedOrders.length === 0 ? (
+                  <div className="text-center py-8 text-gray-500">
+                    No completed orders.
+                  </div>
+                ) : (
+                  <div className="grid gap-4">
+                    {completedOrders.map((row) => (
+                      <div
+                        key={row.id}
+                        onClick={() => handleOrderClick(row)}
+                        className="p-4 border border-gray-200 rounded-lg hover:bg-gray-50 cursor-pointer transition-colors"
+                      >
+                        <div className="flex justify-between items-start">
+                          <div className="flex-1">
+                            <div className="flex items-center gap-2 mb-2">
+                              <h3 className="font-medium text-gray-900">{row.title}</h3>
+                              <span className={`px-2 py-1 text-xs font-medium rounded-full ${getUrgencyColor(row.urgency)}`}>
+                                {row.urgency}
+                              </span>
+                              <span className={`px-2 py-1 text-xs font-medium rounded-full ${getStatusColor(row.status)}`}>
+                                {row.status.replace('_', ' ')}
+                              </span>
+                                        </div>
+                            <p className="text-sm text-gray-600 mb-2">
+                              {row.clientName} • {row.items.length} product(s) • Ready for delivery
+                            </p>
+                            <p className="text-xs text-gray-500">
+                              {row.date} at {row.time}
+                            </p>
+                                      </div>
+                          <div className="flex items-center gap-2">
+                            <CheckCircle className="w-5 h-5 text-green-500" />
+                            <span className="text-sm text-gray-500">Ready</span>
+                                </div>
+                                      </div>
+                                    </div>
+                                  ))}
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+        )}
+                          </div>
+
+      {/* Order Details Modal */}
+      <Transition appear show={isModalOpen} as={Fragment}>
+        <Dialog as="div" className="relative z-50" onClose={() => setIsModalOpen(false)}>
+          <Transition.Child
+            as={Fragment}
+            enter="ease-out duration-300"
+            enterFrom="opacity-0"
+            enterTo="opacity-100"
+            leave="ease-in duration-200"
+            leaveFrom="opacity-100"
+            leaveTo="opacity-0"
+          >
+            <div className="fixed inset-0 bg-black bg-opacity-25" />
           </Transition.Child>
 
           <div className="fixed inset-0 overflow-y-auto">
-            <div className="flex min-h-full items-center justify-center p-4">
-              <Transition.Child as={Fragment} enter="ease-out duration-200" enterFrom="opacity-0 scale-95 translate-y-1" enterTo="opacity-100 scale-100 translate-y-0" leave="ease-in duration-150" leaveFrom="opacity-100 scale-100 translate-y-0" leaveTo="opacity-0 scale-95 translate-y-1">
-                <Dialog.Panel ref={ref} className="w-full max-w-7xl max-h-[90vh] bg-white rounded-2xl lg:rounded-3xl shadow-2xl ring-1 ring-black/5 flex flex-col">
-                  {/* Header */}
-                  <div className="flex items-center justify-between px-6 py-4 border-b bg-white sticky top-0 z-10">
-                    <div>
-                      <Dialog.Title className="text-lg font-semibold text-[#891F1A]">Production Panel — {selected?.id}</Dialog.Title>
-                      {selected && (
-                        <p className="text-xs text-gray-500">
-                          {selected.title} · {normalizeToYMD(selected.date) || selected.date} · {selected.time} ·{" "}
-                          <span className="align-middle">{urgencyBadge(selected.urgency)}</span>
-                        </p>
-                      )}
-                    </div>
-                    <button onClick={() => setIsOpen(false)} className="rounded-lg border px-3 py-1.5 text-sm hover:bg-gray-50">Close</button>
-                  </div>
+            <div className="flex min-h-full items-center justify-center p-4 text-center">
+              <Transition.Child
+                as={Fragment}
+                enter="ease-out duration-300"
+                enterFrom="opacity-0 scale-95"
+                enterTo="opacity-100 scale-100"
+                leave="ease-in duration-200"
+                leaveFrom="opacity-100 scale-100"
+                leaveTo="opacity-0 scale-95"
+              >
+                <Dialog.Panel className="w-full max-w-6xl transform overflow-hidden rounded-2xl bg-white p-6 text-left align-middle shadow-xl transition-all">
+                  <Dialog.Title as="h3" className="text-lg font-medium leading-6 text-gray-900 mb-4">
+                    Order Details - {selectedOrder?.orderCode}
+                  </Dialog.Title>
 
-                  {/* Body */}
-                  <div className="flex-1 overflow-auto px-6 py-6">
-                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-                      {/* ===== TOP ROW: mirrored tables ===== */}
-                      <div className="space-y-5">
-                        <IntakeProductsTable items={intakeProducts} />
-                      </div>
-                      <div className="space-y-5">
-                        <OrderInformationTable items={orderInformation} />
-                      </div>
-
-                      {/* ===== SECOND ROW: existing features ===== */}
-                      {/* LEFT: Assign Machine + Files From Designer */}
-                      <div className="space-y-5">
-                        {/* Assign Machine */}
-                        {/* CHANGE: overflow-visible + relative so dropdown can escape */}
-                        <div className="relative rounded-2xl border border-black bg-white shadow-sm overflow-visible">
-                          <div className="px-4 py-3 bg-gray-100 border-b border-black">
-                            <h3 className="text-sm font-semibold text-gray-900 flex items-center gap-2">⚙️ Assign Machine</h3>
+                  {selectedOrder && (
+                    <div className="space-y-6">
+                      {/* Order Info */}
+                      <div className="bg-gray-50 p-4 rounded-lg">
+                        <div className="grid grid-cols-2 gap-4">
+                          <div>
+                            <label className="text-sm font-medium text-gray-700">Client</label>
+                            <p className="text-sm text-gray-900">{selectedOrder.clientName}</p>
                           </div>
-                          <div className="p-4">
-                            {/* Trigger */}
-                            <div className="relative">
-                              <button
-                                onClick={() => setMachineOpen((o) => !o)}
-                                className="w-full flex items-center justify-between border rounded-lg px-3 py-2 text-sm hover:bg-gray-50 focus:ring-2 focus:ring-indigo-400 transition"
-                                aria-haspopup="listbox"
-                                aria-expanded={machineOpen}
-                              >
-                                <span>{assignedMachines.length === 0 ? "Select machine(s)" : `${assignedMachines.length} selected`}</span>
-                                <svg className={`h-4 w-4 transition-transform ${machineOpen ? "rotate-180" : ""}`} viewBox="0 0 20 20" fill="currentColor">
-                                  <path fillRule="evenodd" d="M5.23 7.21a.75.75 0 011.06.02L10 10.94l3.71-3.71a.75.75 0 111.06 1.06l-4.24 4.24a.75.75 0 01-1.06 0L5.21 8.29a.75.75 0 01.02-1.08z" clipRule="evenodd" />
-                                </svg>
-                              </button>
-
-                              {/* Dropdown */}
-                              <Transition show={machineOpen} as={Fragment} enter="transition ease-out duration-150" enterFrom="opacity-0 translate-y-1" enterTo="opacity-100 translate-y-0" leave="transition ease-in duration-100" leaveFrom="opacity-100 translate-y-0" leaveTo="opacity-0 translate-y-1">
-                                {/* CHANGE: z-40 to sit above neighbors */}
-                                <div className="absolute z-40 mt-2 w-full bg-white border rounded-xl shadow-lg overflow-hidden">
-                                  <div className="flex items-center gap-2 p-2 border-b bg-gray-50">
-                                    <input value={machineSearch} onChange={(e) => setMachineSearch(e.target.value)} placeholder="Search machines…" className="flex-1 px-2 py-1.5 rounded border bg-white text-sm" />
-                                    <button onClick={selectAllMachines} className="text-xs px-2 py-1 rounded border hover:bg-gray-100">Select All</button>
-                                    <button onClick={clearAllMachines} className="text-xs px-2 py-1 rounded border text-red-600 hover:bg-red-50">Clear All</button>
-                                  </div>
-                                  <div className="max-h-60 overflow-auto divide-y" role="listbox">
-                                    {filteredMachines.length === 0 ? (
-                                      <div className="px-3 py-3 text-sm text-gray-500">No machines</div>
-                                    ) : (
-                                      filteredMachines.map((m) => (
-                                        <label key={m.id} className="flex items-center gap-3 px-3 py-2 text-sm cursor-pointer hover:bg-gray-50">
-                                          <input type="checkbox" className="w-4 h-4 accent-indigo-500" checked={!!machineSelections[m.id]} onChange={() => toggleMachine(m.id)} />
-                                          <span className="flex-1">{m.name}</span>
-                                          {etaBadge(m.eta)}
-                                        </label>
-                                      ))
-                                    )}
-                                  </div>
-                                </div>
-                              </Transition>
-                            </div>
-
-                            {/* Selected chips */}
-                            {assignedMachines.length > 0 && (
-                              <div className="mt-3 flex flex-wrap gap-2 items-center">
-                                {assignedMachines.map((m) => (
-                                  <span key={m.id} className="group inline-flex items-center gap-1 text-xs bg-indigo-50 text-indigo-700 px-2 py-1 rounded-full border border-indigo-200">
-                                    {m.name}
-                                    <button aria-label={`Remove ${m.name}`} onClick={() => removeOneMachine(m.id)} className="rounded p-0.5 hover:bg-indigo-100">✕</button>
-                                  </span>
-                                ))}
-                                <button onClick={clearAllMachines} className="ml-auto text-xs text-red-600 hover:text-red-700 font-medium transition">Clear All</button>
+                          <div>
+                            <label className="text-sm font-medium text-gray-700">Urgency</label>
+                            <span className={`inline-block px-2 py-1 text-xs font-medium rounded-full ${getUrgencyColor(selectedOrder.urgency)}`}>
+                              {selectedOrder.urgency}
+                            </span>
+                          </div>
+                          <div>
+                            <label className="text-sm font-medium text-gray-700">Status</label>
+                            <span className={`inline-block px-2 py-1 text-xs font-medium rounded-full ${getStatusColor(selectedOrder.status)}`}>
+                              {selectedOrder.status.replace('_', ' ')}
+                            </span>
                               </div>
-                            )}
-                          </div>
-                        </div>
-
-                        {/* Files From Designer (Preview) */}
-                        <div className="rounded-2xl border border-black bg-white shadow-sm overflow-hidden">
-                          <div className="px-4 py-3 bg-gray-100 border-b border-black flex items-center justify-between">
-                            <h3 className="text-sm font-semibold text-gray-900">Files From Designer (Preview)</h3>
-                            {uploadedFromDesigner.length > 0 && (
-                              <span className="text-xs text-gray-600">{uploadedFromDesigner.length} file(s)</span>
-                            )}
-                          </div>
-
-                          <div className="p-4">
-                            {uploadedFromDesigner.length === 0 ? (
-                              <p className="text-sm text-gray-500">No files from Designer yet.</p>
-                            ) : (
-                              <div className="space-y-4">
-                                {/* Image thumbnails: 2 per row */}
-                                <div className="grid grid-cols-2 gap-3">
-                                  {uploadedFromDesigner.filter((f: any) => f.isImage).map((f: any) => {
-                                    const imgSrc = f.previewUrl ?? f.url;
-                                    return (
-                                      <div key={f.id} className="relative overflow-hidden rounded-lg border bg-gray-50">
-                                        {imgSrc ? (
-                                          <img src={imgSrc} alt={f.name} className="h-40 w-full object-cover" />
-                                        ) : (
-                                          <div className="h-40 w-full grid place-items-center text-xs text-gray-500">No preview</div>
-                                        )}
-                                        <div className="absolute inset-x-0 bottom-0 bg-black/50 text-white text-[11px] px-2 py-1 truncate">
-                                          {f.name}
-                                        </div>
-                                      </div>
-                                    );
-                                  })}
-                                </div>
-
-                                {/* Non-image files as badges */}
-                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                                  {uploadedFromDesigner.filter((f: any) => !f.isImage).map((f: any) => (
-                                    <div key={f.id} className="flex items-center justify-between rounded-lg border px-3 py-2 bg-gray-50">
-                                      <div className="min-w-0">
-                                        <div className="text-sm font-medium truncate" title={f.name}>{f.name}</div>
-                                        <div className="text-[11px] text-gray-500">{formatBytes(f.size)}</div>
-                                      </div>
-                                      <a href={f.url || f.previewUrl} download={f.name} className="text-[11px] px-2 py-1 rounded border hover:bg-gray-100">
-                                        Download
-                                      </a>
-                                    </div>
-                                  ))}
-                                </div>
-                              </div>
-                            )}
-                          </div>
-                        </div>
-                      </div>
-
-                      {/* RIGHT: Production Queue */}
-                      <div className="space-y-5">
-                        <div className="rounded-2xl border border-black bg-white shadow-sm overflow-hidden">
-                          <div className="px-4 py-3 bg-gray-100 border-b border-black">
-                            <h3 className="text-sm font-semibold text-gray-900">Production Queue</h3>
-                          </div>
-
-                          <div className="p-5">
-                            {/* Laser Cutter Group */}
-                            <div className="mb-5">
-                              <div className="flex items-center justify-between mb-2">
-                                <h4 className="text-sm font-semibold text-gray-700">Laser Cutter</h4>
-                                <span className="text-xs text-gray-500">{QUEUE["Laser Cutter"]?.length || 0} jobs</span>
-                              </div>
-                              <div className="space-y-3">
-                                {(QUEUE["Laser Cutter"] || []).map((it) => (
-                                  <div key={it.id} className="flex items-center justify-between rounded-lg bg-gray-50 px-3 py-2">
-                                    <span className="text-sm">{it.title}</span>
-                                    {statusBadge(it.status)}
+                          <div>
+                            <label className="text-sm font-medium text-gray-700">Date</label>
+                            <p className="text-sm text-gray-900">{selectedOrder.date} at {selectedOrder.time}</p>
                                   </div>
-                                ))}
                               </div>
                             </div>
 
-                            {/* Printer Group */}
+                      {/* Design Files */}
                             <div>
-                              <div className="flex items-center justify-between mb-2">
-                                <h4 className="text-sm font-semibold text-gray-700">Printer</h4>
-                                <span className="text-xs text-gray-500">{QUEUE["Printer"]?.length || 0} jobs</span>
+                        <h4 className="text-md font-medium text-gray-900 mb-3">Design Files</h4>
+                        {filesLoading ? (
+                          <div className="text-center py-4 text-gray-500">Loading design files...</div>
+                        ) : designFiles.length > 0 ? (
+                          <div className="grid grid-cols-2 gap-3">
+                            {designFiles.map((file: any) => {
+                              const imgSrc = file.url || file.previewUrl;
+                              return (
+                                <div key={file.id} className="p-3 bg-blue-50 rounded-lg border border-blue-200">
+                                  <div className="flex items-center gap-3">
+                                    {imgSrc ? (
+                                      <img
+                                        src={imgSrc}
+                                        alt={file.name}
+                                        className="w-12 h-12 object-cover rounded"
+                                      />
+                                    ) : (
+                                      <div className="w-12 h-12 bg-blue-100 rounded flex items-center justify-center">
+                                        <FileText className="w-6 h-6 text-blue-600" />
                               </div>
-                              <div className="space-y-3">
-                                {(QUEUE["Printer"] || []).map((it) => (
-                                  <div key={it.id} className="flex items-center justify-between rounded-lg bg-gray-50 px-3 py-2">
-                                    <span className="text-sm">{it.title}</span>
-                                    {statusBadge(it.status)}
+                                    )}
+                                    <div className="flex-1 min-w-0">
+                                      <div className="text-sm font-medium text-gray-900 truncate">
+                                        {file.name}
                                   </div>
-                                ))}
+                                      <div className="text-xs text-gray-500">
+                                        {formatFileSize(file.size)}
                               </div>
                             </div>
                           </div>
                         </div>
+                              );
+                            })}
+                          </div>
+                        ) : (
+                          <div className="text-center py-4 text-gray-500">
+                            No design files uploaded by designer yet.
+                          </div>
+                        )}
                       </div>
+
+                      {/* Products and Machine Assignment */}
+                      <div>
+                        <h4 className="text-md font-medium text-gray-900 mb-3">Products & Machine Assignment</h4>
+                        {selectedOrder.items && selectedOrder.items.length > 0 ? (
+                          <div className="grid grid-cols-2 gap-3">
+                            {selectedOrder.items.map((item: any) => {
+                              const key = `${item.name}_${item.sku || ''}`;
+                              const assignment = productAssignments[key];
+                              const isAssigned = assignment && assignment.machineId;
+                              
+                              return (
+                                <div key={key} className="p-4 bg-gray-50 rounded-lg border border-gray-200">
+                                  <div className="flex items-start gap-3 mb-3">
+                                    {item.image_url ? (
+                                      <img
+                                        src={item.image_url}
+                                        alt={item.name}
+                                        className="w-16 h-16 object-cover rounded"
+                                      />
+                                    ) : (
+                                      <div className="w-16 h-16 bg-gray-200 rounded flex items-center justify-center">
+                                        <Package className="w-8 h-8 text-gray-400" />
+                                      </div>
+                                    )}
+                                    <div className="flex-1 min-w-0">
+                                      <div className="text-sm font-medium text-gray-900 truncate">
+                                        {item.name}
+                                      </div>
+                                      <div className="text-xs text-gray-500">
+                                        SKU: {item.sku || 'N/A'} • Qty: {item.quantity || 1}
+                                      </div>
+                                      {item.attributes && Object.keys(item.attributes).length > 0 && (
+                                        <div className="mt-1">
+                                          {Object.entries(item.attributes).map(([attr, value]) => (
+                                            <span key={attr} className="inline-block px-2 py-1 text-xs bg-gray-200 text-gray-700 rounded mr-1 mb-1">
+                                              {attr}: {String(value)}
+                                            </span>
+                                          ))}
+                      </div>
+                                      )}
                     </div>
+                                    {isAssigned && (
+                                      <CheckCircle className="w-5 h-5 text-green-500 flex-shrink-0" />
+                                    )}
                   </div>
 
-                  {/* Footer */}
-                  <div className="border-t bg-white px-4 py-4 flex justify-center gap-4">
-                    <div className="flex items-center gap-2">
-                      <label htmlFor="sendTo" className="text-sm font-medium text-gray-700">
-                        Send to:
+                                  <div className="space-y-3">
+                                    <div>
+                                      <label className="block text-xs font-medium text-gray-700 mb-1">
+                                        Machine
                       </label>
                       <select
-                        id="sendTo"
-                        className="inline-flex items-center rounded-md border border-gray-300 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#891F1A]/30 focus:border-[#891F1A] transition"
-                        value={formData?.sendTo ?? "Sales"}
-                        onChange={(e) =>
-                          setFormData((prev) => ({
-                            ...(prev || {}),
-                            sendTo: e.target.value as "Sales" | "Designer" | "Production",
-                          }))
-                        }
-                      >
-                        <option value="Sales">Sales</option>
-                        <option value="Designer">Designer</option>
-                        <option value="Production">Production</option>
+                                        value={assignment?.machineId || ''}
+                                        onChange={(e) => handleMachineChange(key, e.target.value)}
+                                        className="w-full px-3 py-2 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                      >
+                                        <option value="">Select Machine</option>
+                                        {AVAILABLE_MACHINES.map((machine) => (
+                                          <option key={machine.id} value={machine.id}>
+                                            {machine.name}
+                                          </option>
+                                        ))}
                       </select>
                     </div>
+                                    
+                                    <div>
+                                      <label className="block text-xs font-medium text-gray-700 mb-1">
+                                        Estimated Time (minutes)
+                                      </label>
+                                      <input
+                                        type="number"
+                                        min="1"
+                                        value={assignment?.estimatedTime || 60}
+                                        onChange={(e) => handleTimeChange(key, parseInt(e.target.value) || 60)}
+                                        className="w-full px-3 py-2 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                      />
+                                    </div>
+                                  </div>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        ) : (
+                          <div className="text-center py-4 text-gray-500">
+                            No products in this order.
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Actions */}
+                      <div className="flex justify-center gap-4">
+                        <Button
+                          onClick={handleAssignMachines}
+                          disabled={assigning || !validateAssignments(selectedOrder)}
+                          className="bg-blue-600 text-white hover:bg-blue-700 disabled:bg-gray-400"
+                        >
+                          {assigning ? 'Saving...' : 'Save Assignments'}
+                        </Button>
+                        
+                        <Button
+                          onClick={handleConfirmOrder}
+                          disabled={confirming || !validateAssignments(selectedOrder)}
+                          className="bg-green-600 text-white hover:bg-green-700 disabled:bg-gray-400"
+                        >
+                          {confirming ? 'Confirming...' : 'Confirm Order'}
+                        </Button>
+                      </div>
+                    </div>
+                  )}
+
+                  <div className="mt-6 flex justify-end">
+                    <Button
+                      onClick={() => setIsModalOpen(false)}
+                      variant="outline"
+                    >
+                      Close
+                    </Button>
                   </div>
                 </Dialog.Panel>
               </Transition.Child>
@@ -584,3 +803,5 @@ export default function ProductionOrdersTablePage() {
     </div>
   );
 }
+
+

@@ -42,6 +42,14 @@ export interface OrderItem {
   quantity: number;
   attributes?: Record<string, string>;
   sku?: string;
+  design_ready?: boolean;
+  design_need_custom?: boolean;
+  design_files_manifest?: Array<{
+    name: string;
+    size: number;
+    type: string;
+    url?: string;
+  }>;
 }
 
 export interface Order {

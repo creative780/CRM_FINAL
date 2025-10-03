@@ -32,7 +32,7 @@ ChartJS.register(
 
 // Dynamically import patternomaly to avoid server-side issues
 const getPattern = () => {
-  const [pattern, setPattern] = useState(() => '#d1d5db'); // Default to solid color if not loaded
+  const [pattern, setPattern] = useState<string | CanvasPattern>(() => '#d1d5db'); // Default to solid color if not loaded
   useEffect(() => {
     import('patternomaly').then((module) => {
       setPattern(module.default.draw('diagonal', '#d1d5db'));
@@ -333,13 +333,12 @@ export default function DashboardPage() {
           y: {
             beginAtZero: true,
             ticks: {
-              callback: (value) => `$${(value / 1000).toFixed(0)}k`,
+              callback: (value) => `$${((value as number) / 1000).toFixed(0)}k`,
               color: '#6B7280',
             },
             grid: {
               color: '#E5E7EB',
               lineWidth: 1,
-              drawBorder: false,
             },
           },
           x: {

@@ -42,6 +42,7 @@ import DetachedScrollbar from "@/app/components/DetachedScrollbar";
 import ScrollAreaWithRail from "@/app/components/ScrollAreaWithRail";
 import DashboardNavbar from "@/app/components/navbar/DashboardNavbar";
 import { listActivityLogs, type ActivityEvent as BEActivityEvent } from "@/lib/activity-logs";
+import { api } from "@/lib/api";
 
 interface ActivityLog {
   id: string;
@@ -394,6 +395,9 @@ export default function ActivityLogs() {
     "all" | "active" | "inactive"
   >("all");
   const [selectedDate, setSelectedDate] = useState<Date>();
+  const [deviceId, setDeviceId] = useState<string>("");
+  const [currentDeviceName, setCurrentDeviceName] = useState<string>("");
+  const [currentIP, setCurrentIP] = useState<string>("");
   const logsScrollRef = useRef<HTMLDivElement>(null);
 
   // Load from backend (no UI changes)

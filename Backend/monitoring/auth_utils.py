@@ -52,6 +52,7 @@ def verify_enrollment_token(token: str) -> dict:
 def create_device_token(device: Device, expires_days: int = 14) -> DeviceToken:
     """Create a long-lived device token"""
     secret = generate_device_token()
+    token_value = generate_device_token()  # Generate a separate token value
     expires_at = timezone.now() + timedelta(days=expires_days)
     
     # Invalidate any existing tokens for this device
@@ -60,6 +61,7 @@ def create_device_token(device: Device, expires_days: int = 14) -> DeviceToken:
     token = DeviceToken.objects.create(
         device=device,
         secret=secret,
+        token=token_value,  # Add this line - this was missing!
         expires_at=expires_at
     )
     

@@ -63,26 +63,28 @@ export default function Page() {
         const convertedOrders: Order[] = apiOrders.map((order: ApiOrder) => {
           const summary = summarizeItems(order.items);
           const detail = order.specs ? `${summary} - ${order.specs}` : summary;
+          const quotation = order.quotation;
           return {
             id: order.id,
             company: order.client_name,
             name: order.client_name,
-            phone: "+971-XXXXXXXXX",
+            phone: order.phone || "+971-XXXXXXXXX",
             detail,
             date: order.created_at.split('T')[0],
-            price: Math.floor(Math.random() * 500) + 50,
-            advance: Math.floor(Math.random() * 200) + 10,
-            remaining: Math.floor(Math.random() * 300) + 20,
+            price: quotation?.grand_total || 0,
+            advance: quotation?.advance_paid || 0,
+            remaining: quotation?.remaining || 0,
             location: "Dubai",
             status:
               order.status === 'new'
                 ? 'Pending'
-                : order.status === 'in_progress'
+                : order.status === 'active' || order.status === 'in_progress'
                 ? 'In Progress'
                 : order.status === 'completed'
                 ? 'Completed'
                 : 'Pending',
             items: order.items,
+            finalPrice: quotation?.grand_total,
           };
         });
 

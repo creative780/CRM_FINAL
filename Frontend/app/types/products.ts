@@ -24,6 +24,7 @@ export interface ConfiguredProduct {
   price: number;           // unit price
   attributes: Record<string, string>; // { size: "L", color: "Red" }
   sku?: string;
+  customRequirements?: string; // Custom design requirements for this product
   design?: {
     ready: boolean;
     needCustom: boolean;

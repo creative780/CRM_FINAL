@@ -228,24 +228,35 @@ class EnrollCompleteView(APIView):
             ip = data.get('ip') or request.META.get('REMOTE_ADDR')
             
             # Create or update device
-            device, created = Device.objects.get_or_create(
+            # First, try to find existing device with same hostname and user
+            existing_devices = Device.objects.filter(
                 current_user=user,
-                hostname=hostname,
-                defaults={
-                    'os': os_name,
-                    'agent_version': agent_version,
-                    'org': org_id,
-                    'status': 'OFFLINE',
-                    'ip': ip
-                }
+                hostname=hostname
             )
             
-            if not created:
+            if existing_devices.exists():
+                # Use the most recent device
+                device = existing_devices.order_by('-created_at').first()
+                created = False
+                
                 # Update existing device
                 device.os = os_name
                 device.agent_version = agent_version
                 device.ip = ip  # Update IP on re-enrollment
                 device.save()
+            else:
+                # Create new device
+                device = Device.objects.create(
+                    current_user=user,
+                    hostname=hostname,
+                    os=os_name,
+                    agent_version=agent_version,
+                    org=org_id,
+                    status='OFFLINE',
+                    ip=ip
+                )
+                created = True
+            
             
             # Create device token
             device_token = create_device_token(device)

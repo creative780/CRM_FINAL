@@ -24,6 +24,18 @@ export interface StoredFileMeta {
  */
 export async function fileToStoredFile(file: File): Promise<StoredFile> {
   return new Promise((resolve, reject) => {
+    // Validate that we have a proper File object with blob data
+    if (!(file instanceof File)) {
+      reject(new Error('Invalid file object: not an instance of File'));
+      return;
+    }
+    
+    // Check if the file has actual content (size > 0)
+    if (file.size === 0) {
+      reject(new Error('Cannot process empty file: file size is 0'));
+      return;
+    }
+    
     const reader = new FileReader();
     reader.onload = () => {
       const result = reader.result as string;
@@ -131,23 +143,42 @@ export async function saveFilesToStorageSafe(key: string, files: File[]): Promis
   if (typeof window === 'undefined') return;
   
   try {
+    // Filter out empty files and invalid file objects
+    const validFiles = files.filter(file => {
+      if (!(file instanceof File)) {
+        console.warn('Skipping invalid file object:', file);
+        return false;
+      }
+      if (file.size === 0) {
+        console.warn('Skipping empty file:', file.name);
+        return false;
+      }
+      return true;
+    });
+    
+    // If no valid files, just clear storage
+    if (validFiles.length === 0) {
+      clearFilesFromStorage(key);
+      return;
+    }
+    
     // Check total size before attempting to save
-    const totalSize = files.reduce((sum, file) => sum + file.size, 0);
+    const totalSize = validFiles.reduce((sum, file) => sum + file.size, 0);
     const maxSize = 2 * 1024 * 1024; // 2MB limit for localStorage
     
     if (totalSize > maxSize) {
       console.warn(`Files too large (${(totalSize / 1024 / 1024).toFixed(2)}MB), storing metadata only`);
-      saveFileMetaToStorage(key, files);
+      saveFileMetaToStorage(key, validFiles);
       return;
     }
     
-    const storedFiles = await Promise.all(files.map(fileToStoredFile));
+    const storedFiles = await Promise.all(validFiles.map(fileToStoredFile));
     const serialized = JSON.stringify(storedFiles);
     
     // Check if serialized size is still too large
     if (serialized.length > maxSize) {
       console.warn(`Serialized files too large (${(serialized.length / 1024 / 1024).toFixed(2)}MB), storing metadata only`);
-      saveFileMetaToStorage(key, files);
+      saveFileMetaToStorage(key, validFiles);
       return;
     }
     
@@ -156,7 +187,9 @@ export async function saveFilesToStorageSafe(key: string, files: File[]): Promis
   } catch (error) {
     if (error instanceof DOMException && error.name === 'QuotaExceededError') {
       console.warn('localStorage quota exceeded, falling back to metadata only');
-      saveFileMetaToStorage(key, files);
+      // Filter valid files for metadata storage too
+      const validFiles = files.filter(file => file instanceof File && file.size > 0);
+      saveFileMetaToStorage(key, validFiles);
     } else {
       console.error('Failed to save files to localStorage:', error);
     }
@@ -183,7 +216,7 @@ export function loadFileMetaFromStorage(key: string): StoredFileMeta[] {
 /**
  * Load files from localStorage with fallback to metadata
  */
-export function loadFilesFromStorageSafe(key: string): File[] {
+export function loadFilesFromStorageSafe(key: string): StoredFileMeta[] {
   if (typeof window === 'undefined') return [];
   
   try {
@@ -194,22 +227,24 @@ export function loadFilesFromStorageSafe(key: string): File[] {
     
     // Check if it's full file data or just metadata
     if (parsed.length > 0 && parsed[0].data) {
-      // Full file data
-      return parsed.map(storedFileToFile);
+      // Full file data - return StoredFileMeta objects
+      console.log('Loading full file data from localStorage');
+      return parsed.map((storedFile: StoredFile) => ({
+        name: storedFile.name,
+        size: storedFile.size,
+        type: storedFile.type,
+        lastModified: storedFile.lastModified
+      }));
     } else {
-      // Just metadata - return empty files with proper names
+      // Just metadata
       console.log('Loading file metadata only (files too large for localStorage)');
-      return parsed.map((meta: StoredFileMeta) => {
-        const file = new File([], meta.name, { 
-          type: meta.type,
-          lastModified: meta.lastModified
-        });
-        Object.defineProperty(file, 'name', {
-          value: meta.name,
-          writable: false
-        });
-        return file;
-      });
+      return parsed.map((meta: StoredFileMeta) => ({
+        name: meta.name,
+        size: meta.size,
+        type: meta.type,
+        lastModified: meta.lastModified,
+        url: meta.url
+      }));
     }
   } catch (error) {
     console.error('Failed to load files from localStorage:', error);

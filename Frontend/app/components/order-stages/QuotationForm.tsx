@@ -7,16 +7,45 @@ import QuotationPreview from "./QuotationPreview";
 import { useReactToPrint } from "react-to-print";
 import { Dialog } from "@headlessui/react";
 
-export default function QuotationForm({ formData, setFormData }: any) {
+export default function QuotationForm({ 
+  formData, 
+  setFormData, 
+  selectedProducts = [], 
+  onAddProduct, 
+  onRemoveProduct, 
+  onEditProduct 
+}: any) {
   const [isPreviewOpen, setIsPreviewOpen] = useState(false);
   const previewRef = useRef(null);
 
 
 
   const handlePrint = useReactToPrint({
-    content: () => previewRef.current,
+    contentRef: previewRef,
     documentTitle: "Quotation",
   });
+
+  const handleProductsChange = (products: any[]) => {
+    // Convert products to the format expected by OrderIntakeForm
+    const configuredProducts = products.map(product => ({
+      id: product.id,
+      productId: product.id,
+      name: product.name,
+      quantity: product.quantity,
+      price: product.unitPrice || product.price,
+      attributes: product.attributes || {},
+      sku: product.sku || '',
+      imageUrl: product.imageUrl || '',
+      customRequirements: product.customRequirements || '',
+    }));
+
+    setFormData({
+      ...formData,
+      products: products,
+      items: products, // Also update items for compatibility
+      selectedProducts: configuredProducts, // Add this for OrderIntakeForm compatibility
+    });
+  };
 
   return (
     <div className="flex flex-col lg:flex-row items-stretch w-full gap-6 pt-6 px-4">
@@ -147,17 +176,24 @@ export default function QuotationForm({ formData, setFormData }: any) {
             />
           </div>
 
-          {/* Final Price (Read-only) */}
+          {/* Final Price (Editable) */}
           <div className="flex flex-col">
             <label className="text-sm font-medium text-gray-700 mb-1">
               Final Price
             </label>
             <input
-              type="text"
-              value={formData.grandTotal ? `AED ${formData.grandTotal}` : ""}
-              readOnly
-              className="w-full border border-gray-300 rounded px-3 py-2 bg-gray-100 text-gray-700 font-semibold"
-              placeholder="Calculated automatically..."
+              type="number"
+              inputMode="decimal"
+              min="0"
+              value={formData.finalPrice ?? ""}
+              onChange={(e) =>
+                setFormData({
+                  ...formData,
+                  finalPrice: e.target.value === "" ? "" : parseFloat(e.target.value) || 0,
+                })
+              }
+              className="w-full border border-gray-300 rounded px-3 py-2 focus:outline-none focus:ring-2 focus:ring-black"
+              placeholder="Enter final price..."
             />
           </div>
 
@@ -176,7 +212,11 @@ export default function QuotationForm({ formData, setFormData }: any) {
       {/* Live Preview on the Right */}
       <div className="w-full lg:w-1/2">
         <div className="sticky top-0">
-          <QuotationPreview formData={formData} />
+          <QuotationPreview 
+            formData={formData} 
+            onProductsChange={handleProductsChange}
+            isEditable={true}
+          />
         </div>
       </div>
 
@@ -186,7 +226,7 @@ export default function QuotationForm({ formData, setFormData }: any) {
         onClose={() => setIsPreviewOpen(false)}
         className="fixed inset-0 z-50 flex items-center justify-center p-4"
       >
-        <Dialog.Overlay className="fixed inset-0 bg-black/40" />
+        <div className="fixed inset-0 bg-black/40" />
         <div className="relative bg-white rounded-lg w-full max-w-4xl mx-auto max-h-[90vh] overflow-y-auto p-6">
           <div className="flex justify-between items-center border-b pb-2 mb-4">
             <Dialog.Title className="text-lg font-semibold">
@@ -201,7 +241,11 @@ export default function QuotationForm({ formData, setFormData }: any) {
           </div>
 
           <div ref={previewRef}>
-            <QuotationPreview formData={formData} />
+            <QuotationPreview 
+              formData={formData} 
+              onProductsChange={handleProductsChange}
+              isEditable={true}
+            />
           </div>
 
           <div className="pt-6 text-right">

@@ -6,12 +6,28 @@ export interface OrderItem {
   quantity: number;
   attributes?: Record<string, string>;
   sku?: string;
+  imageUrl?: string;
+  customRequirements?: string;
+  design_ready?: boolean;
+  design_need_custom?: boolean;
+  design_files_manifest?: Array<{
+    name: string;
+    size: number;
+    type: string;
+    url?: string;
+  }>;
 }
 
 export interface Order {
   id: number;
+  order_id?: number;
   order_code: string;
   client_name: string;
+  company_name?: string;
+  phone?: string;
+  trn?: string;
+  email?: string;
+  address?: string;
   specs: string;
   urgency: string;
   status: string;
@@ -21,6 +37,15 @@ export interface Order {
   created_by: number | null;
   created_at: string;
   updated_at: string;
+  assigned_sales_person?: string;
+  assigned_designer?: string;
+  assigned_production_person?: string;
+  design_stage?: any;
+  printing_stage?: any;
+  delivery_stage?: any;
+  design_approvals?: any[];
+  machine_assignments?: any[];
+  pricing_status?: string;
 }
 
 export interface OrderQuotation {
@@ -41,6 +66,8 @@ export interface OrderQuotation {
   vat_3pct: number;
   grand_total: number;
   remaining: number;
+  sales_person?: string;
+  trn?: string;
 }
 
 export interface OrderDesign {

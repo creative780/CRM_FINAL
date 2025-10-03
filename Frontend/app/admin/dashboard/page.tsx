@@ -31,9 +31,9 @@ ChartJS.register(
   ChartDataLabels
 );
 
-// Lazy pattern background for “Expenses” bars you already use
+// Lazy pattern background for "Expenses" bars you already use
 const getPattern = () => {
-  const [pattern, setPattern] = useState(() => '#d1d5db');
+  const [pattern, setPattern] = useState<CanvasPattern | string>(() => '#d1d5db');
   useEffect(() => {
     import('patternomaly').then((m) => {
       setPattern(m.default.draw('diagonal', '#d1d5db'));
@@ -429,7 +429,7 @@ export default function DashboardPage() {
                     labels: ['HP L570', 'HP 800W', 'Mimaki JV150', 'Epson S80600', 'Summa Cutter', 'Laminator'],
                     datasets: [
                       { label: 'Utilization %', data: [86, 78, 64, 72, 58, 49], backgroundColor: '#1E40AF', borderRadius: 6, barThickness: 28 },
-                      { label: 'Target %', type: 'line' as const, data: [85, 85, 85, 85, 85, 85], borderColor: '#10B981', backgroundColor: 'transparent', tension: 0.25, pointRadius: 2 },
+                      { label: 'Target %', data: [85, 85, 85, 85, 85, 85], backgroundColor: '#10B981', borderRadius: 6, barThickness: 28 },
                     ],
                   }}
                   options={{
@@ -534,7 +534,7 @@ export default function DashboardPage() {
                     labels: ['Vinyl','Fabric','Paper','Ink CMYK','Lamination'],
                     datasets: [
                       { label: 'Used', data: [320, 210, 450, 180, 240], backgroundColor: '#111827', borderRadius: 6 },
-                      { label: 'Reorder Threshold', data: [250, 200, 400, 220, 220], type: 'line' as const, borderColor: '#EF4444', backgroundColor: 'transparent', tension: 0.15, pointRadius: 2 },
+                      { label: 'Reorder Threshold', data: [250, 200, 400, 220, 220], backgroundColor: '#EF4444', borderRadius: 6 },
                     ],
                   }}
                   options={{
@@ -616,7 +616,7 @@ export default function DashboardPage() {
                   labels: ['Q1','Q2','Q3','Q4'],
                   datasets: [
                     { type: 'bar' as const, label: 'Bookings', data: [180, 220, 260, 300], backgroundColor: '#1E40AF', borderRadius: 6, barThickness: 38 },
-                    { type: 'line' as const, label: 'Target', data: [200, 240, 280, 320], borderColor: '#10B981', backgroundColor: 'transparent', tension: 0.3, pointRadius: 3 },
+                    { label: 'Target', data: [200, 240, 280, 320], backgroundColor: '#10B981', borderRadius: 6, barThickness: 38 },
                   ],
                 }}
                 options={{
@@ -1033,7 +1033,7 @@ export default function DashboardPage() {
                     y: {
                       beginAtZero: true,
                       ticks: { callback: (v) => `$${(v as number / 1000).toFixed(0)}k`, color: '#6B7280' },
-                      grid: { color: '#E5E7EB', lineWidth: 1, drawBorder: false },
+                      grid: { color: '#E5E7EB', lineWidth: 1 },
                     },
                     x: { stacked: false, ticks: { color: '#6B7280' }, grid: { display: false } },
                   },

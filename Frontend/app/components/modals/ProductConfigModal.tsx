@@ -26,14 +26,24 @@ export default function ProductConfigModal({
   onConfirm,
   initialQty = 1,
   initialAttributes = {},
-  initialPrice = 0,
+  initialPrice,
   editingProductId,
   onBack
 }: ProductConfigModalProps) {
+  
+  // Memoize baseProductId to prevent unnecessary re-renders
+  const baseProductId = useMemo(() => baseProduct?.id, [baseProduct?.id]);
+  
+  // Memoize initialAttributes string representation to check for actual changes
+  const initialAttributesString = useMemo(() => 
+    JSON.stringify(initialAttributes), [initialAttributes]
+  );
+  
   const [attributes, setAttributes] = useState<ProductAttribute[]>([]);
   const [selectedAttributes, setSelectedAttributes] = useState<Record<string, string>>({});
   const [quantity, setQuantity] = useState("");
   const [price, setPrice] = useState<number>(0);
+  const [isPriceManuallySet, setIsPriceManuallySet] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   
@@ -46,7 +56,9 @@ export default function ProductConfigModal({
   // Load design files from localStorage on component mount
   useEffect(() => {
     if (baseProduct) {
-      const storageKey = `orderLifecycle_designFiles_${baseProduct.id}`;
+      // Use editingProductId if available (when editing), otherwise use baseProduct.id (when creating new)
+      const productKey = editingProductId || baseProduct.id;
+      const storageKey = `orderLifecycle_designFiles_${productKey}`;
       const storedFiles = loadFileMetaFromStorage(storageKey);
       if (storedFiles.length > 0) {
         // Convert stored file metadata back to File objects with proper name
@@ -65,18 +77,21 @@ export default function ProductConfigModal({
         setFiles(loadedFiles);
       }
     }
-  }, [baseProduct]);
+  }, [baseProductId, editingProductId]);
 
   // Save design files to localStorage whenever files change
   useEffect(() => {
     if (baseProduct && files.length > 0) {
-      const storageKey = `orderLifecycle_designFiles_${baseProduct.id}`;
+      // Use editingProductId if available (when editing), otherwise use baseProduct.id (when creating new)
+      const productKey = editingProductId || baseProduct.id;
+      const storageKey = `orderLifecycle_designFiles_${productKey}`;
       saveFileMetaToStorage(storageKey, files);
     } else if (baseProduct) {
-      const storageKey = `orderLifecycle_designFiles_${baseProduct.id}`;
+      const productKey = editingProductId || baseProduct.id;
+      const storageKey = `orderLifecycle_designFiles_${productKey}`;
       clearFilesFromStorage(storageKey);
     }
-  }, [files, baseProduct]);
+  }, [files, baseProductId, editingProductId]);
 
   // Price calculation helpers
   const toQty = (v: string) => {
@@ -87,6 +102,12 @@ export default function ProductConfigModal({
   const baseUnitPrice = baseProduct?.defaultPrice || 0;
   
   const effectiveUnitPrice = useMemo(() => {
+    // If price was manually set, use the manual price
+    if (isPriceManuallySet) {
+      return price;
+    }
+    
+    // Otherwise calculate based on attributes
     const sumDelta = Object.entries(selectedAttributes).reduce((sum, [attrKey, optionValue]) => {
       if (!optionValue) return sum;
       const attr = attributes.find(a => a.key === attrKey);
@@ -95,19 +116,19 @@ export default function ProductConfigModal({
       return sum + (option?.priceDelta ?? 0);
     }, 0);
     return Math.max(0, baseUnitPrice + sumDelta);
-  }, [baseUnitPrice, selectedAttributes, attributes]);
+  }, [baseUnitPrice, selectedAttributes, attributes, isPriceManuallySet, price]);
 
   const finalPrice = useMemo(() => {
     return effectiveUnitPrice * toQty(quantity);
   }, [effectiveUnitPrice, quantity]);
 
-  // Auto-update price when attributes change
+  // Auto-update price when attributes change (only if not manually set)
   useEffect(() => {
-    if (baseProduct && Object.keys(selectedAttributes).length > 0) {
+    if (baseProduct && Object.keys(selectedAttributes).length > 0 && !isPriceManuallySet) {
       const newPrice = effectiveUnitPrice;
       setPrice(newPrice);
     }
-  }, [effectiveUnitPrice, baseProduct]);
+  }, [effectiveUnitPrice, baseProductId, isPriceManuallySet]);
 
   // Load product attributes when baseProduct changes
   useEffect(() => {
@@ -132,7 +153,8 @@ export default function ProductConfigModal({
           
           // Initialize price with default price or initial price
           const defaultPrice = baseProduct.defaultPrice || 0;
-          setPrice(initialPrice || defaultPrice);
+          setPrice(Number(initialPrice) || defaultPrice);
+          setIsPriceManuallySet(Number(initialPrice) > 0); // If initialPrice is provided, mark as manually set
         })
         .catch((err) => {
           setError("Failed to load product attributes");
@@ -142,25 +164,55 @@ export default function ProductConfigModal({
           setLoading(false);
         });
     }
-  }, [baseProduct, open]); // Simplified dependencies
+  }, [baseProductId, open]); // Using memoized baseProductId
 
   // Reset state when modal opens/closes
   useEffect(() => {
     if (open) {
       setQuantity(initialQty ? initialQty.toString() : "");
+      setPrice(Number(initialPrice) || 0);
+      setIsPriceManuallySet(Number(initialPrice) > 0);
+      setSelectedAttributes(initialAttributes || {});
       setError(null);
-      // Don't set selectedAttributes here - let the first useEffect handle it
+      
+      // Load design data if editing existing product
+      if (editingProductId && baseProduct) {
+        // Load custom requirements from localStorage
+        const requirementsKey = `orderLifecycle_customRequirements_${editingProductId}`;
+        const storedRequirements = localStorage.getItem(requirementsKey);
+        if (storedRequirements) {
+          setCustomText(storedRequirements);
+        }
+        
+        // Load design checkbox states from localStorage
+        const readyDesignKey = `orderLifecycle_readyDesign_${editingProductId}`;
+        const storedReadyDesign = localStorage.getItem(readyDesignKey);
+        setReadyDesign(storedReadyDesign === 'true');
+        
+        const needCustomKey = `orderLifecycle_needCustom_${editingProductId}`;
+        const storedNeedCustom = localStorage.getItem(needCustomKey);
+        setNeedCustom(storedNeedCustom === 'true');
+      }
     } else {
+      // Clear all state when modal closes
       setAttributes([]);
       setSelectedAttributes({});
       setQuantity("");
       setPrice(0);
+      setIsPriceManuallySet(false);
       setFiles([]);
       setReadyDesign(false);
       setNeedCustom(false);
       setCustomText("");
+      
+      // Clear localStorage for the current product if it exists
+      if (baseProduct) {
+        const productKey = editingProductId || baseProduct.id;
+        const storageKey = `orderLifecycle_designFiles_${productKey}`;
+        clearFilesFromStorage(storageKey);
+      }
     }
-  }, [open]); // Only depend on open
+  }, [open, initialQty, initialPrice, editingProductId, baseProductId, initialAttributesString]); // Using memoized values to prevent infinite re-renders
 
   // Handle escape key and body scroll
   useEffect(() => {
@@ -213,21 +265,29 @@ export default function ProductConfigModal({
       return;
     }
 
-    if (effectiveUnitPrice <= 0) {
-      setError("Effective unit price must be greater than 0");
+    if (price <= 0) {
+      setError("Unit price must be greater than 0");
+      return;
+    }
+
+    // Validate design files - now mandatory for all products
+    if (files.length === 0) {
+      setError("Design files are mandatory. Please upload at least one design file.");
       return;
     }
 
     // Generate unique ID for the configured product
+    const productId = editingProductId || `${baseProduct.id}_${Date.now()}`;
     const configuredProduct: ConfiguredProduct = {
-      id: editingProductId || `${baseProduct.id}_${Date.now()}`,
+      id: productId,
       productId: baseProduct.id,
       name: baseProduct.name,
       imageUrl: baseProduct.imageUrl,
       quantity: qtyNum,
-      price: effectiveUnitPrice, // Always use the calculated effective unit price
+      price: price, // Use the current price (either manual or calculated)
       attributes: selectedAttributes,
       sku: `${baseProduct.id}_${Object.values(selectedAttributes).join('_')}`,
+      customRequirements: needCustom ? customText : "", // Add custom requirements at product level
       design: {
         ready: readyDesign,
         needCustom: needCustom,
@@ -235,6 +295,20 @@ export default function ProductConfigModal({
         files: files.map(f => ({ name: f.name, size: f.size, type: f.type }))
       }
     };
+
+    // Save design data to localStorage for later retrieval when editing
+    const requirementsKey = `orderLifecycle_customRequirements_${productId}`;
+    const readyDesignKey = `orderLifecycle_readyDesign_${productId}`;
+    const needCustomKey = `orderLifecycle_needCustom_${productId}`;
+    
+    if (needCustom && customText) {
+      localStorage.setItem(requirementsKey, customText);
+    } else {
+      localStorage.removeItem(requirementsKey);
+    }
+    
+    localStorage.setItem(readyDesignKey, readyDesign.toString());
+    localStorage.setItem(needCustomKey, needCustom.toString());
 
     onConfirm(configuredProduct);
   };
@@ -412,7 +486,11 @@ export default function ProductConfigModal({
                     min="0"
                     step="0.01"
                     value={price}
-                    onChange={(e) => setPrice(parseFloat(e.target.value) || 0)}
+                    onChange={(e) => {
+                      const newPrice = parseFloat(e.target.value) || 0;
+                      setPrice(newPrice);
+                      setIsPriceManuallySet(true);
+                    }}
                     className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-[#891F1A] focus:border-transparent"
                   />
                 </div>
@@ -423,7 +501,7 @@ export default function ProductConfigModal({
                     <h4 className="text-sm font-medium text-gray-700 mb-2">Configuration Summary</h4>
                     <div className="space-y-1 text-sm text-gray-600">
                       <div>Quantity: {quantity || "0"}</div>
-                      <div>Unit Price: AED {effectiveUnitPrice.toFixed(2)}</div>
+                      <div>Unit Price: AED {(Number(price) || 0).toFixed(2)}</div>
                       {attributes.map((attr) => {
                         const selectedValue = selectedAttributes[attr.key];
                         const selectedOption = attr.options.find(opt => opt.value === selectedValue);

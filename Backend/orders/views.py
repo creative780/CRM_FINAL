@@ -2,7 +2,7 @@ import re
 import uuid
 import os
 from typing import Any, Mapping, Optional
-from decimal import Decimal
+from decimal import Decimal, DecimalException
 from django.utils.crypto import get_random_string
 from django.db import transaction
 from django.conf import settings
@@ -61,23 +61,67 @@ def create_stage_models(order: Order, stage: str, payload: dict = None):
         
         if stage == "quotation" and payload:
             quotation, created = Quotation.objects.get_or_create(order=order)
-            for field in ['labour_cost', 'finishing_cost', 'paper_cost', 'machine_cost', 
-                         'design_cost', 'delivery_cost', 'other_charges', 'discount', 'advance_paid']:
+            # Handle numeric fields (convert to Decimal)
+            numeric_fields = ['labour_cost', 'finishing_cost', 'paper_cost', 'machine_cost', 
+                             'design_cost', 'delivery_cost', 'other_charges', 'discount', 'advance_paid']
+            for field in numeric_fields:
                 if field in payload:
-                    # Convert string values to Decimal for cost fields
                     value = payload[field]
                     if isinstance(value, str):
                         try:
-                            value = Decimal(value)
-                        except (ValueError, TypeError):
+                            # Handle empty strings and whitespace-only strings
+                            if not value or value.strip() == '':
+                                value = Decimal('0.00')
+                            else:
+                                value = Decimal(value)
+                        except (ValueError, TypeError, DecimalException):
                             value = Decimal('0.00')
                     setattr(quotation, field, value)
+            
+            # Handle string fields (no conversion needed)
+            string_fields = ['sales_person']
+            for field in string_fields:
+                if field in payload:
+                    setattr(quotation, field, payload[field])
+            
+            # Handle finalPrice field (maps to grand_total)
+            if 'finalPrice' in payload:
+                value = payload['finalPrice']
+                if isinstance(value, str):
+                    try:
+                        value = Decimal(value)
+                    except (ValueError, TypeError):
+                        value = Decimal('0.00')
+                quotation.grand_total = value
+            
             quotation.save(skip_calculation=True)  # Skip auto-calculation for manual updates
             print(f"Quotation model saved: {created}")
+            
+            # Update order model fields if provided
+            order_updated = False
+            for field in ['clientName', 'companyName', 'phone', 'trn', 'email', 'address', 'specifications']:
+                if field in payload:
+                    # Map frontend field names to backend field names
+                    if field == 'clientName':
+                        backend_field = 'client_name'
+                    elif field == 'companyName':
+                        backend_field = 'company_name'
+                    elif field == 'specifications':
+                        backend_field = 'specs'
+                    else:
+                        backend_field = field  # trn, phone, email, address remain the same
+                    
+                    print(f"Updating order field: {field} -> {backend_field} = {payload[field]}")
+                    setattr(order, backend_field, payload[field])
+                    order_updated = True
+            
+            if order_updated:
+                order.save()
+                print(f"Order model updated with new fields")
         
         elif stage == "design" and payload:
             design, created = DesignStage.objects.get_or_create(order=order)
-            for field in ['assigned_designer', 'requirements_files_manifest', 'design_status']:
+            for field in ['assigned_designer', 'requirements_files_manifest', 'design_status', 'internal_comments']:
                 if field in payload:
                     print(f"Setting {field} = {payload[field]}")
                     setattr(design, field, payload[field])
@@ -104,6 +148,14 @@ def create_stage_models(order: Order, stage: str, payload: dict = None):
         
         elif stage == "delivery" and payload:
             delivery, created = DeliveryStage.objects.get_or_create(order=order)
+            
+            # Handle delivery_code at order level since it's in Order model
+            if 'delivery_code' in payload:
+                print(f"Setting delivery_code = {payload['delivery_code']}")
+                order.delivery_code = payload['delivery_code']
+                order.save(update_fields=['delivery_code'])
+            
+            # Handle delivery-specific fields in DeliveryStage model
             for field in ['rider_photo_path', 'delivered_at']:
                 if field in payload:
                     print(f"Setting {field} = {payload[field]}")
@@ -155,7 +207,7 @@ class OrdersViewSet(ModelViewSet):
     allowed_roles = ['admin', 'sales', 'designer', 'production', 'delivery', 'finance']
     
     def get_queryset(self):
-        queryset = Order.objects.all().prefetch_related('items', 'uploads')
+        queryset = Order.objects.all().prefetch_related('items', 'uploads', 'quotation')
         
         # Filter by stage
         stage = self.request.query_params.get('stage')
@@ -193,10 +245,13 @@ class OrdersViewSet(ModelViewSet):
                 client_name=order_data['clientName'],
                 company_name=order_data.get('companyName', ''),
                 phone=order_data.get('phone', ''),
+                trn=order_data.get('trn', ''),
                 email=order_data.get('email', ''),
                 address=order_data.get('address', ''),
                 specs=order_data.get('specs', ''),
                 urgency=order_data.get('urgency', 'Normal'),
+                sales_person=order_data.get('salesPerson', None),
+                assigned_sales_person=request.user.username,  # Assign to current user
                 created_by=request.user if request.user.is_authenticated else None,
             )
             
@@ -283,19 +338,37 @@ class OrdersViewSet(ModelViewSet):
         
         sku = serializer.validated_data['sku']
         qty = serializer.validated_data['qty']
+        print_operator = serializer.validated_data.get('print_operator', '')
+        print_time = serializer.validated_data.get('print_time')
+        batch_info = serializer.validated_data.get('batch_info', '')
+        qa_checklist = serializer.validated_data.get('qa_checklist', '')
         
         with transaction.atomic():
-            # Update printing stage
+            # Update printing stage with all details
             printing, created = PrintingStage.objects.get_or_create(order=order)
             printing.print_status = 'Printed'
+            printing.print_operator = print_operator
+            if print_time:
+                printing.print_time = print_time
+            printing.batch_info = batch_info
+            printing.qa_checklist = qa_checklist
             printing.save()
             
             # Update order status if needed
             if order.stage == 'printing':
-                order.status = 'active'
+                order.status = 'Active'
                 order.save(update_fields=['status'])
+            
+            # Log the printing completion
+            print(f"Order {order.order_code} marked as printed by {print_operator}")
+            print(f"SKU: {sku}, Quantity: {qty}")
         
-        return Response({'ok': True})
+        return Response({
+            'ok': True, 
+            'message': f'Order {order.order_code} marked as printed successfully',
+            'print_status': 'Printed',
+            'order_status': order.status
+        })
 
 
 class SendDeliveryCodeView(APIView):
@@ -422,13 +495,16 @@ class QuotationView(APIView):
                 # Update the quotation
                 quotation = serializer.save()
                 
-                # Only recalculate totals if grand_total was not manually set
-                if 'grand_total' not in request.data:
+                # Only recalculate totals if grand_total or finalPrice was not manually set
+                if 'grand_total' not in request.data and 'finalPrice' not in request.data:
                     quotation.calculate_totals()
                     quotation.save()
                 else:
-                    # If grand_total was manually set, manually set it and save without recalculating
-                    quotation.grand_total = Decimal(str(request.data['grand_total']))
+                    # If grand_total or finalPrice was manually set, use that value and save without recalculating
+                    if 'finalPrice' in request.data:
+                        quotation.grand_total = Decimal(str(request.data['finalPrice']))
+                    elif 'grand_total' in request.data:
+                        quotation.grand_total = Decimal(str(request.data['grand_total']))
                     quotation.save(skip_calculation=True)
                 
                 # Don't change order stage/status when updating quotations

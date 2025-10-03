@@ -208,7 +208,7 @@ export default function EmployeeMonitoringWithLogin() {
         const token = typeof window !== "undefined" ? localStorage.getItem("admin_token") : null;
         console.log('Auth token:', token ? 'Present' : 'Missing');
         const params = new URLSearchParams({ q: searchTerm, status: statusFilter });
-        const headers = token ? { Authorization: `Bearer ${token}` } : {};
+        const headers: Record<string, string> = token ? { Authorization: `Bearer ${token}` } : {};
         console.log('Fetching devices with headers:', headers);
         
         const res = await fetch(`${API_BASE}/api/admin/devices?${params.toString()}`, { cache: "no-store", headers });
@@ -356,7 +356,7 @@ export default function EmployeeMonitoringWithLogin() {
         // Use a more predictable productivity change
         const prod = Math.min(99, Math.max(50, e.productivity + (e.id.charCodeAt(0) % 2 === 0 ? 1 : -1)));
         const activities = [{ time: nowTime, action, application }, ...e.activities].slice(0, 5000);
-        return { ...e, keystrokeCount: ke, mouseClicks: cl, productivity: prod, lastScreenshot: e.lastScreenshot || "Just now", activities, status: "online", idleTime: "0h 0m" };
+        return { ...e, keystrokeCount: ke, mouseClicks: cl, productivity: prod, lastScreenshot: e.lastScreenshot || "Just now", activities, status: "online" as const, idleTime: "0h 0m" };
       });
 
       fetch(`${API_BASE}/api/track`, {

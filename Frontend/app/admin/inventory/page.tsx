@@ -340,22 +340,22 @@ const mockInventory = [
 ];
 export default function InventoryPage() {
   const [search, setSearch] = useState('');
-  const [editItem, setEditItem] = useState(null);
+  const [editItem, setEditItem] = useState<any>(null);
   const [inventory, setInventory] = useState(mockInventory);
 
   const filtered = inventory.filter((item) =>
     item.name.toLowerCase().includes(search.toLowerCase())
   );
 
-  const getStockBadge = (qty, reorder) =>
+  const getStockBadge = (qty: number, reorder: number) =>
     qty <= reorder ? (
       <Badge className="bg-red-100 text-red-700">Low</Badge>
     ) : (
       <Badge className="bg-green-100 text-green-700">OK</Badge>
     );
 
-  const handleEditChange = (key, value) => {
-    setEditItem((prev) => ({
+  const handleEditChange = (key: string, value: any) => {
+    setEditItem((prev: any) => ({
       ...prev,
       [key]: key === 'quantity' || key === 'unitPrice' ? Number(value) : value,
     }));

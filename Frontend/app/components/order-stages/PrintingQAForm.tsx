@@ -39,34 +39,53 @@ export default function PrintingQAForm({ formData, setFormData, handleMarkPrinte
       <h2 className="text-xl font-bold text-gray-900">Printing & QA</h2>
       <Separator />
 
+      {/* Current Status Display */}
+      <div className="bg-gray-50 p-4 rounded-lg mb-6">
+        <h3 className="text-sm font-semibold text-gray-800 mb-2">Current Status</h3>
+        <div className="flex items-center gap-2">
+          <div className={`w-3 h-3 rounded-full ${
+            formData.printStatus === 'Printed' ? 'bg-green-500' : 
+            formData.printStatus === 'Printing' ? 'bg-yellow-500' : 'bg-gray-400'
+          }`}></div>
+          <span className="text-sm text-gray-700">
+            Print Status: <strong>{formData.printStatus || 'Pending'}</strong>
+          </span>
+        </div>
+      </div>
+
       <div className="grid gap-4">
         <div className="flex flex-col">
-          <label className="text-sm font-medium text-gray-700 mb-1">Print Operator</label>
+          <label className="text-sm font-medium text-gray-700 mb-1">Print Operator *</label>
           <input
             type="text"
             value={formData.printOperator || ""}
             onChange={(e) => setFormData({ ...formData, printOperator: e.target.value })}
-            className="border rounded px-3 py-2"
+            className="border border-gray-300 rounded px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
+            placeholder="Enter operator name..."
+            required
           />
         </div>
 
         <div className="flex flex-col">
-          <label className="text-sm font-medium text-gray-700 mb-1">Print Time</label>
+          <label className="text-sm font-medium text-gray-700 mb-1">Print Time *</label>
           <input
             type="datetime-local"
             value={formData.printTime || ""}
             onChange={(e) => setFormData({ ...formData, printTime: e.target.value })}
-            className="border rounded px-3 py-2"
+            className="border border-gray-300 rounded px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
+            required
           />
         </div>
 
         <div className="flex flex-col">
-          <label className="text-sm font-medium text-gray-700 mb-1">Batch Info</label>
+          <label className="text-sm font-medium text-gray-700 mb-1">Batch Info *</label>
           <input
             type="text"
             value={formData.batchInfo || ""}
             onChange={(e) => setFormData({ ...formData, batchInfo: e.target.value })}
-            className="border rounded px-3 py-2"
+            className="border border-gray-300 rounded px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
+            placeholder="Enter batch number or info..."
+            required
           />
         </div>
 
@@ -75,7 +94,7 @@ export default function PrintingQAForm({ formData, setFormData, handleMarkPrinte
           <select
             value={formData.printStatus || "Pending"}
             onChange={(e) => setFormData({ ...formData, printStatus: e.target.value })}
-            className="border rounded px-3 py-2 bg-white text-black"
+            className="border border-gray-300 rounded px-3 py-2 bg-white text-black focus:outline-none focus:ring-2 focus:ring-blue-500"
           >
             <option>Pending</option>
             <option>Printing</option>
@@ -86,17 +105,34 @@ export default function PrintingQAForm({ formData, setFormData, handleMarkPrinte
         <div className="flex flex-col">
           <label className="text-sm font-medium text-gray-700 mb-1">QA Checklist</label>
           <textarea
-            rows={3}
+            rows={4}
             value={formData.qaChecklist || ""}
             onChange={(e) => setFormData({ ...formData, qaChecklist: e.target.value })}
-            className="border rounded px-3 py-2 resize-none"
+            className="border border-gray-300 rounded px-3 py-2 resize-none focus:outline-none focus:ring-2 focus:ring-blue-500"
+            placeholder="Enter quality assurance checklist items..."
           />
         </div>
       </div>
 
-      <Button onClick={handleMarkPrinted} className="bg-blue-600 hover:bg-blue-700 text-white mt-4">
-        Mark Printed
-      </Button>
+      {/* Action Buttons */}
+      <div className="flex gap-4 mt-6">
+        <Button 
+          onClick={handleMarkPrinted} 
+          className="bg-green-600 hover:bg-green-700 text-white px-6 py-2 rounded-lg font-medium"
+          disabled={formData.printStatus === 'Printed'}
+        >
+          {formData.printStatus === 'Printed' ? 'Already Printed' : 'Mark as Printed'}
+        </Button>
+        
+        {formData.printStatus === 'Printed' && (
+          <div className="flex items-center text-green-600 text-sm">
+            <svg className="w-4 h-4 mr-1" fill="currentColor" viewBox="0 0 20 20">
+              <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
+            </svg>
+            Ready for Client Approval
+          </div>
+        )}
+      </div>
     </Card>
   );
 }

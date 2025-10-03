@@ -120,6 +120,7 @@ interface EmployeeModalProps {
   employee: {
     name: string;
     image: string;
+    country?: string;
   };
   onClose: () => void;
 }

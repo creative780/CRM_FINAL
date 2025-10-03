@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useEffect, useState } from "react";
-import {Dialog} from "../../components/ui/dialog";
+import {Dialog, DialogContent, DialogHeader, DialogTitle} from "../../components/ui/dialog";
 import {Button} from "../../components/ui/button";
 
 type Client = {
@@ -73,8 +73,12 @@ const ClientProfileModal: React.FC<Props> = ({
   };
 
   return (
-    <Dialog open={open} onClose={onClose} title="Edit Client">
-      <div className="space-y-4">
+    <Dialog open={open} onOpenChange={(open) => !open && onClose()}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>Edit Client</DialogTitle>
+        </DialogHeader>
+        <div className="space-y-4">
         <div className="border-t border-gray-200 -mt-2 pt-4" />
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <ReadonlyField label="Name" value={client?.name ?? ""} />
@@ -156,7 +160,8 @@ const ClientProfileModal: React.FC<Props> = ({
             Save
           </Button>
         </div>
-      </div>
+        </div>
+      </DialogContent>
     </Dialog>
   );
 };

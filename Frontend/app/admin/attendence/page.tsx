@@ -33,7 +33,7 @@ import {
   Settings,
   FileText,
 } from "lucide-react";
-import { format, parseISO } from "date-fns";
+import { format } from "date-fns";
 import ScrollAreaWithRail from "@/app/components/ScrollAreaWithRail";
 import DashboardNavbar from "@/app/components/navbar/DashboardNavbar";
 import { api } from "@/lib/api";
@@ -114,7 +114,7 @@ function toNumber(value: number | string | null | undefined): number | null {
 function formatTimeFromIso(iso: string | null | undefined): string | null {
   if (!iso) return null;
   try {
-    return format(parseISO(iso), "HH:mm");
+    return format(new Date(iso), "HH:mm");
   } catch {
     const parsed = new Date(iso);
     if (Number.isNaN(parsed.getTime())) return null;
@@ -128,8 +128,8 @@ function computeDurationFromIso(
 ): string {
   if (!checkIn || !checkOut) return "In Progress";
   try {
-    const start = parseISO(checkIn);
-    const end = parseISO(checkOut);
+    const start = new Date(checkIn);
+    const end = new Date(checkOut);
     const diffMs = Math.max(0, end.getTime() - start.getTime());
     const hours = Math.floor(diffMs / (1000 * 60 * 60));
     const minutes = Math.floor((diffMs % (1000 * 60 * 60)) / (1000 * 60));
@@ -1245,7 +1245,6 @@ export default function Attendance() {
               <ScrollAreaWithRail
                 heightClass="max-h-[29rem]"
                 railPosition="outside"
-                contentRightGap={12}
               >
                 <div className="rounded-md border bg-white">
                   <Table className="w-full text-sm">

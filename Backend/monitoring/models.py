@@ -124,7 +124,7 @@ class Device(models.Model):
     last_seen = models.DateTimeField(auto_now=True)
     is_active = models.BooleanField(default=True)
     current_user = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name='devices')
-    current_user_name = models.CharField(max_length=255, blank=True)
+    current_user_name = models.CharField(max_length=255, blank=True, null=True)
     current_user_role = models.CharField(max_length=32, null=True, blank=True)
     last_user_bind_at = models.DateTimeField(null=True, blank=True)
     
@@ -147,6 +147,7 @@ class Device(models.Model):
 
     class Meta:
         ordering = ['-last_heartbeat']
+        unique_together = [('current_user', 'hostname')]
 
     def __str__(self):
         return f"{self.hostname} ({self.id})"
@@ -174,12 +175,12 @@ class Heartbeat(models.Model):
     device = models.ForeignKey(Device, on_delete=models.CASCADE, related_name='heartbeats')
     cpu_percent = models.FloatField()
     mem_percent = models.FloatField()
-    active_window = models.CharField(max_length=255, blank=True)
+    active_window = models.CharField(max_length=255, blank=True, null=True)
     is_locked = models.BooleanField(default=False)
     ip = models.GenericIPAddressField(null=True, blank=True)
     user_id_snapshot = models.IntegerField(null=True, blank=True)
-    user_name_snapshot = models.CharField(max_length=255, blank=True)
-    user_role_snapshot = models.CharField(max_length=50, blank=True)
+    user_name_snapshot = models.CharField(max_length=255, blank=True, null=True)
+    user_role_snapshot = models.CharField(max_length=50, blank=True, null=True)
     created_at = models.DateTimeField(auto_now_add=True)
 
     # Phase 2: Enhanced monitoring fields
@@ -209,8 +210,8 @@ class Screenshot(models.Model):
     height = models.IntegerField()
     sha256 = models.CharField(max_length=64, unique=True)
     user_id_snapshot = models.IntegerField(null=True, blank=True)
-    user_name_snapshot = models.CharField(max_length=255, blank=True)
-    user_role_snapshot = models.CharField(max_length=50, blank=True)
+    user_name_snapshot = models.CharField(max_length=255, blank=True, null=True)
+    user_role_snapshot = models.CharField(max_length=50, blank=True, null=True)
     taken_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:

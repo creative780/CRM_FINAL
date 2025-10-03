@@ -69,7 +69,9 @@ export default function DesignUploadSection({
 
   return (
     <div className="space-y-3">
-      <label className="text-sm font-medium text-gray-900">Design upload</label>
+      <label className="text-sm font-medium text-gray-900 flex items-center gap-1">
+        Design upload <span className="text-red-500">*</span>
+      </label>
 
       <div
         role="button"
@@ -98,8 +100,8 @@ export default function DesignUploadSection({
           </svg>
         </div>
 
-        <div className="text-base font-medium text-gray-900">Upload your design</div>
-        <div className="text-sm text-gray-500">Click or drag & drop to upload</div>
+        <div className="text-base font-medium text-gray-900">Upload your design files</div>
+        <div className="text-sm text-gray-500">Click or drag & drop to upload <span className="text-red-500">(required)</span></div>
         <div className="text-xs text-gray-400 mt-1">
           Files supported: {accept.join(", ")}
         </div>
